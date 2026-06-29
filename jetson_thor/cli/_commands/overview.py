@@ -1,4 +1,4 @@
-"""``jetson-thor-cli overview`` — read-only descriptive snapshot of the agent.
+"""``thor overview`` — read-only descriptive snapshot of the agent.
 
 Describes the agent to an agent reader: identity (from culture.yaml), the verb
 surface, and the sibling-pattern artifacts this template carries. The shared
@@ -90,7 +90,7 @@ def cmd_overview(args: argparse.Namespace) -> int:
     # `target` is accepted for rubric compatibility (descriptive verbs must not
     # hard-fail on a missing path) but overview describes this agent itself.
     emit_overview(
-        "jetson-thor-cli",
+        "thor",
         agent_sections(),
         json_mode=bool(getattr(args, "json", False)),
     )

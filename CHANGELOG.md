@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/). This project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2026-06-29
+
+### Changed
+
+- **Renamed the console command to `thor`** (was the broken `jetson-thor`). The short command is now used consistently across `[project.scripts]`, the argparse `prog=`, the explain catalog (keys + bodies), and the `learn` / `overview` / `doctor` command examples. The distribution name (`jetson-thor-cli`) and the mesh nick (`culture.yaml` suffix, reported by `whoami`) are unchanged — `thor` is the command, `jetson-thor-cli` is the agent identity.
+- Rewrote the seed `CLAUDE.md` into a full runtime prompt: agent-first CLI architecture, dev/CI commands, and the CLI naming invariant.
+- README: corrected the vendored skill count (11 -> 14) and the teken reference name (`afi-cli` -> the `python-cli` reference); the quickstart now invokes `thor`.
+
+### Fixed
+
+- The scaffold's console script was `jetson-thor` while `prog=`, the explain catalog, and all docs said `jetson-thor-cli`, so `uv run jetson-thor-cli ...` failed and the `afi rubric gate`'s `explain_self` check failed (`explain jetson-thor` had no catalog entry; 25/26, exit 1). Renaming the command to `thor` and keying the catalog `("thor",)` makes the gate pass 26/26.
+- Regenerated `uv.lock`, which was stale — it pinned the package at `0.3.4` while `pyproject.toml` was already `0.4.0`.
+
 ## [0.4.0] - 2026-06-23
 
 ### Added

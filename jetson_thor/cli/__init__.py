@@ -70,8 +70,8 @@ def _build_parser() -> argparse.ArgumentParser:
     from jetson_thor.cli._commands import whoami as _whoami_cmd
 
     parser = _CliArgumentParser(
-        prog="jetson-thor-cli",
-        description="jetson-thor-cli — a clonable template for AgentCulture mesh agents.",
+        prog="thor",
+        description="thor — a clonable template for AgentCulture mesh agents.",
     )
     parser.add_argument(
         "--version",
