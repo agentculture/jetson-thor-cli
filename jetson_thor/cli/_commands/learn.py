@@ -1,4 +1,4 @@
-"""``jetson-thor-cli learn`` — the learnability affordance.
+"""``thor learn`` — the learnability affordance.
 
 Prints a structured self-teaching prompt. Must satisfy the agent-first rubric:
 >=200 chars and mention purpose, command map, exit codes, --json, and explain.
@@ -12,7 +12,7 @@ from jetson_thor import __version__
 from jetson_thor.cli._output import emit_result
 
 _TEXT = """\
-jetson-thor-cli — a clonable template for AgentCulture mesh agents.
+thor — a clonable template for AgentCulture mesh agents.
 
 Purpose
 -------
@@ -23,12 +23,12 @@ rename the package, and edit culture.yaml to mint a new agent.
 
 Commands
 --------
-  jetson-thor-cli whoami             Identity from culture.yaml.
-  jetson-thor-cli learn              This self-teaching prompt.
-  jetson-thor-cli explain <path>...  Markdown docs for any noun/verb path.
-  jetson-thor-cli overview           Descriptive snapshot of the agent.
-  jetson-thor-cli doctor             Check the agent-identity invariants.
-  jetson-thor-cli cli overview       Describe the CLI surface itself.
+  thor whoami             Identity from culture.yaml.
+  thor learn              This self-teaching prompt.
+  thor explain <path>...  Markdown docs for any noun/verb path.
+  thor overview           Descriptive snapshot of the agent.
+  thor doctor             Check the agent-identity invariants.
+  thor cli overview       Describe the CLI surface itself.
 
 Machine-readable output
 -----------------------
@@ -44,13 +44,13 @@ Exit-code policy
 
 More detail
 -----------
-  jetson-thor-cli explain jetson-thor-cli
+  thor explain thor
 """
 
 
 def _as_json_payload() -> dict[str, object]:
     return {
-        "tool": "jetson-thor-cli",
+        "tool": "thor",
         "version": __version__,
         "purpose": "Clonable scaffold for a new AgentCulture mesh agent.",
         "commands": [
@@ -67,7 +67,7 @@ def _as_json_payload() -> dict[str, object]:
             "2": "environment/setup error",
         },
         "json_support": True,
-        "explain_pointer": "jetson-thor-cli explain <path>",
+        "explain_pointer": "thor explain <path>",
     }
 
 

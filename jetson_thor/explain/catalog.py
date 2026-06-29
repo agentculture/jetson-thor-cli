@@ -1,7 +1,7 @@
-"""Markdown catalog for ``jetson-thor-cli explain <path>``.
+"""Markdown catalog for ``thor explain <path>``.
 
 Each entry is verbatim markdown. Keys are command-path tuples. The empty tuple
-and ``("jetson-thor-cli",)`` both resolve to the root entry.
+and ``("thor",)`` both resolve to the root entry.
 
 Keep bodies self-contained: an agent reading one entry should get enough
 context without chaining reads.
@@ -10,7 +10,7 @@ context without chaining reads.
 from __future__ import annotations
 
 _ROOT = """\
-# jetson-thor-cli
+# thor
 
 A clonable template for AgentCulture mesh agents. It carries an agent-first CLI
 (cited from the teken `python-cli` reference), a mesh identity (`culture.yaml` +
@@ -20,12 +20,12 @@ buildable/deployable package baseline. Clone it, rename the package, edit
 
 ## Verbs
 
-- `jetson-thor-cli whoami` — identity probe from `culture.yaml`.
-- `jetson-thor-cli learn` — structured self-teaching prompt.
-- `jetson-thor-cli explain <path>` — markdown docs for any noun/verb.
-- `jetson-thor-cli overview` — descriptive snapshot of the agent.
-- `jetson-thor-cli doctor` — check the agent-identity invariants.
-- `jetson-thor-cli cli overview` — describe the CLI surface.
+- `thor whoami` — identity probe from `culture.yaml`.
+- `thor learn` — structured self-teaching prompt.
+- `thor explain <path>` — markdown docs for any noun/verb.
+- `thor overview` — descriptive snapshot of the agent.
+- `thor doctor` — check the agent-identity invariants.
+- `thor cli overview` — describe the CLI surface.
 
 ## Exit-code policy
 
@@ -36,49 +36,49 @@ buildable/deployable package baseline. Clone it, rename the package, edit
 
 ## See also
 
-- `jetson-thor-cli explain whoami`
-- `jetson-thor-cli explain doctor`
+- `thor explain whoami`
+- `thor explain doctor`
 """
 
 _WHOAMI = """\
-# jetson-thor-cli whoami
+# thor whoami
 
 Reports the agent's identity from `culture.yaml`: nick (`suffix`), backend,
 served model, and the package version. Read-only.
 
 ## Usage
 
-    jetson-thor-cli whoami
-    jetson-thor-cli whoami --json
+    thor whoami
+    thor whoami --json
 """
 
 _LEARN = """\
-# jetson-thor-cli learn
+# thor learn
 
 Prints a structured self-teaching prompt covering purpose, command map,
 exit-code policy, `--json` support, and the `explain` pointer.
 
 ## Usage
 
-    jetson-thor-cli learn
-    jetson-thor-cli learn --json
+    thor learn
+    thor learn --json
 """
 
 _EXPLAIN = """\
-# jetson-thor-cli explain <path>
+# thor explain <path>
 
 Prints markdown documentation for any noun/verb path. Unlike `--help` (terse,
 positional), `explain` is global and addressable by path.
 
 ## Usage
 
-    jetson-thor-cli explain jetson-thor-cli
-    jetson-thor-cli explain whoami
-    jetson-thor-cli explain --json <path>
+    thor explain thor
+    thor explain whoami
+    thor explain --json <path>
 """
 
 _OVERVIEW = """\
-# jetson-thor-cli overview
+# thor overview
 
 Read-only descriptive snapshot of the agent: identity (from `culture.yaml`), the
 verb surface, and the sibling-pattern artifacts the template carries. Accepts an
@@ -86,12 +86,12 @@ ignored `target` so a stray path never hard-fails.
 
 ## Usage
 
-    jetson-thor-cli overview
-    jetson-thor-cli overview --json
+    thor overview
+    thor overview --json
 """
 
 _DOCTOR = """\
-# jetson-thor-cli doctor
+# thor doctor
 
 Checks the agent-identity invariants `steward doctor` verifies:
 prompt-file-present and backend-consistency (`colleague` → `AGENTS.colleague.md`), plus a
@@ -99,26 +99,26 @@ skills-present check. Exits 1 when unhealthy.
 
 ## Usage
 
-    jetson-thor-cli doctor
-    jetson-thor-cli doctor --json
+    thor doctor
+    thor doctor --json
 """
 
 _CLI = """\
-# jetson-thor-cli cli
+# thor cli
 
 Noun group for CLI-surface introspection. `cli overview` describes the CLI
 itself (distinct from the global `overview`, which describes the agent).
 
 ## Usage
 
-    jetson-thor-cli cli overview
-    jetson-thor-cli cli overview --json
+    thor cli overview
+    thor cli overview --json
 """
 
 
 ENTRIES: dict[tuple[str, ...], str] = {
     (): _ROOT,
-    ("jetson-thor-cli",): _ROOT,
+    ("thor",): _ROOT,
     ("whoami",): _WHOAMI,
     ("learn",): _LEARN,
     ("explain",): _EXPLAIN,

@@ -1,4 +1,4 @@
-"""``jetson-thor-cli explain <path>...`` — global markdown catalog lookup (stable-contract).
+"""``thor explain <path>...`` — global markdown catalog lookup (stable-contract).
 
 ``explain`` is global (not nested under a noun). It takes zero or more path
 tokens and resolves them via the catalog in :mod:`jetson_thor.explain`.
@@ -32,7 +32,7 @@ def register(sub: argparse._SubParsersAction) -> None:
     p.add_argument(
         "path",
         nargs="*",
-        help="Command path tokens; empty = root (same as 'jetson-thor-cli').",
+        help="Command path tokens; empty = root (same as 'thor').",
     )
     p.add_argument("--json", action="store_true", help="Emit structured JSON.")
     p.set_defaults(func=cmd_explain)

@@ -4,12 +4,12 @@ Agent and CLI for operating NVIDIA Jetson Thor (Blackwell-based robotics/edge-AI
 
 ## What you get
 
-- **An agent-first CLI** cited from [teken](https://github.com/agentculture/teken)
-  (`afi-cli`) — the runtime package has no third-party dependencies.
+- **An agent-first CLI** cited from [teken](https://github.com/agentculture/teken)'s
+  `python-cli` reference — the runtime package has no third-party dependencies.
 - **A mesh identity** — `culture.yaml` (`suffix` + `backend`) and the matching
   resident prompt file (`AGENTS.colleague.md`, since this template runs
   `backend: colleague`).
-- **The canonical guildmaster skill kit** (11 skills) under `.claude/skills/`,
+- **The canonical guildmaster skill kit** (14 skills) under `.claude/skills/`,
   vendored cite-don't-import. See [`docs/skill-sources.md`](docs/skill-sources.md).
 - **A build + deploy baseline** — pytest, lint, the agent-first rubric gate, and
   PyPI Trusted Publishing wired into GitHub Actions.
@@ -19,8 +19,8 @@ Agent and CLI for operating NVIDIA Jetson Thor (Blackwell-based robotics/edge-AI
 ```bash
 uv sync
 uv run pytest -n auto                 # run the test suite
-uv run jetson-thor-cli whoami  # identity from culture.yaml
-uv run jetson-thor-cli learn   # self-teaching prompt (add --json)
+uv run thor whoami             # identity from culture.yaml
+uv run thor learn              # self-teaching prompt (add --json)
 uv run teken cli doctor . --strict    # the agent-first rubric gate CI runs
 ```
 
