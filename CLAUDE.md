@@ -118,6 +118,43 @@ drive without docs. Every surface is introspectable (`learn`, `explain`,
   `acp`→`AGENTS.md`, `gemini`→`GEMINI.md`) plus a `skills-present` check. It
   emits the rubric-shaped `{healthy, checks:[{id,passed,severity,message,
   remediation}]}` and exits 1 when unhealthy.
+- **Machine-telemetry verbs sit at top level** (`status`, `memory`, `gpu`,
+  `disk`, `thermal`, `containers`, `network`, `processes`, `power`), alongside
+  `whoami`/`doctor` rather than under a noun — the Thor *is* the system,
+  mirroring `dgx-spark-cli`'s design (this surface was ported from there).
+  `power` and `l4t` (folded into `status`) are the Jetson-specific additions
+  over the DGX Spark original: nvpmodel mode, jetson_clocks state, and INA
+  hwmon power rails have no DGX Spark equivalent, and the L4T release comes
+  from `/etc/nv_tegra_release`, a Tegra-only file.
+- **`jetson_thor/probe/`** — the collector package backing the machine verbs.
+  Each domain module (`memory`, `disk`, `gpu`, `thermal`, `network`,
+  `containers`, `processes`, `power`, `l4t`, `host`, `contention`) exposes a
+  `collect()` returning a JSON-friendly report dict (`_report.py`:
+  `subject`/`available`/`source`/`warnings`/`sections`/`data`/`remediation`);
+  `status.py` aggregates them into an anomalies-first headline. Collectors
+  **never raise** — a missing tool or unreadable `/proc`/`/sys` node degrades
+  to `available: false` plus a remediation hint, so descriptive verbs always
+  exit 0 (`doctor` stays the only health gate). Every collector takes an
+  injectable command `Runner` and/or file root (`_run.py`) so the suite runs
+  off-Thor on x86 CI with no GPU, docker, or aarch64.
+- **`jetson_thor/swap/`** — domain logic for the `swap` noun group: `state.py`
+  reads `/proc/swaps` + `/proc/meminfo` + swappiness for a point-in-time
+  snapshot, `sar.py` reads recent trend via `sadf -j` (sysstat), `history.py`
+  is a bounded JSONL per-process sampler/store under
+  `$XDG_STATE_HOME/jetson-thor`, and `grow.py`/`apply.py` split the resize
+  workflow into a pure planner (`GrowPlan`, never touches the host) and a
+  privileged executor gated on `apply=True` + root. `swap grow` is
+  **dry-run by default** — plan-only until both gates are satisfied.
+- **`jetson_thor/monitor/`** — the webhook watchdog behind `monitor`:
+  `config.py` (JSON at `~/.config/jetson-thor/monitor.json`, env override
+  `JETSON_THOR_WEBHOOK_URL`), `rules.py` (`evaluate(snapshot, thresholds) ->
+  [Alert]`, pure), `engine.py` (snapshot → evaluate → diff → notify → persist,
+  `run_once`/`run_loop`), `notify.py` (stdlib `urllib` POST, generic/Slack/
+  Discord presets, never raises into the loop), `state.py` (edge-triggered:
+  fires on transition, resolves on recovery, re-notifies only after
+  `renotify_cycles`), and `systemd.py` (generates/manages the `--user` unit
+  `jetson-thor-monitor.service`). No model, no inference — pure threshold
+  comparison.
 
 **No runtime dependencies** is a hard invariant — `dependencies = []`. Anything
 new the CLI needs at runtime must be hand-rolled or deferred; third-party libs

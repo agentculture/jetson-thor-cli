@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/). This project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-07-13
+
+### Added
+
+- **Machine-telemetry verbs at top level** — nine new commands (`status`, `memory`, `gpu`, `disk`, `thermal`, `containers`, `network`, `processes`, `power`) sit alongside `whoami`/`doctor` because the Thor *is* the system. `status` aggregates the others into an anomalies-first headline and includes the flashed L4T/JetPack release; `gpu` backfills temperature/power/clock from sysfs since `nvidia-smi` is thin on the Thor iGPU; `power` is Jetson-only (nvpmodel mode, jetson_clocks state, INA power-rail draw). Backed by the new `jetson_thor/probe/` collector package.
+- **`swap` noun group** (`swap overview`, `swap status`, `swap grow`, `swap history`, `swap sample`) — swap/memory state inspection, sysstat/sar trend reading, a bounded per-process memory/swap history store, and a swap-grow planner/executor that is dry-run by default and requires root + `--apply` to touch the host. Backed by the new `jetson_thor/swap/` package.
+- **`monitor` webhook watchdog** — a deterministic, AI-free threshold watchdog that polls the probe collectors and POSTs edge-triggered alerts (fire on transition, resolve on recovery) to a generic/Slack/Discord webhook. Ships a systemd `--user` unit (`jetson-thor-monitor.service`) the CLI generates and manages, config at `~/.config/jetson-thor/monitor.json`, and a `JETSON_THOR_WEBHOOK_URL` override so secrets needn't live on disk. Backed by the new `jetson_thor/monitor/` package.
+- All three layers are stdlib-only (the `dependencies = []` invariant is unchanged) and were ported from `dgx-spark-cli`, adapted for Jetson Thor's Tegra/L4T platform (nvpmodel, jetson_clocks, INA hwmon rails, `/etc/nv_tegra_release`) in place of DGX Spark's equivalents.
+
 ## [0.4.1] - 2026-06-29
 
 ### Changed
