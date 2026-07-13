@@ -148,6 +148,8 @@ def cmd_once(args: argparse.Namespace) -> int:
             ],
         }
     ]
+    if result.get("state_error"):
+        emit_diagnostic(str(result["state_error"]))
     if events:
         sections.append(
             {
@@ -327,8 +329,12 @@ def cmd_enable(args: argparse.Namespace) -> int:
             message=f"could not enable service: {error}",
             remediation="ensure the systemd user manager is running and the unit is installed",
         )
+    if error:
+        # ok=True with a message means a non-fatal degradation (e.g. linger
+        # could not be enabled) — surface it without failing the verb.
+        emit_diagnostic(error)
     if _json(args):
-        emit_result({"subject": "monitor enable", "ok": True, "error": None}, json_mode=True)
+        emit_result({"subject": "monitor enable", "ok": True, "warning": error}, json_mode=True)
     else:
         emit_result("enabled + started", json_mode=False)
     return 0

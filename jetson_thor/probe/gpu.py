@@ -29,6 +29,7 @@ nvidia-smi produced nothing at all).
 
 from __future__ import annotations
 
+import csv
 from pathlib import Path
 from typing import Optional
 
@@ -70,6 +71,17 @@ def _fmt_num(value: Optional[float], unit: str = "", digits: int = 1) -> str:
     return f"{value:.{digits}f}{unit}" if value is not None else "n/a"
 
 
+def _split_csv(line: str) -> list[str]:
+    """Split one nvidia-smi CSV line honouring quoting (process names can
+    contain commas); ``str.split(",")`` would shift the columns."""
+    try:
+        # nvidia-smi separates with ", " — skipinitialspace so a quoted field
+        # after the space is still recognised as quoted.
+        return [field.strip() for field in next(csv.reader([line], skipinitialspace=True))]
+    except (csv.Error, StopIteration):
+        return [field.strip() for field in line.split(",")]
+
+
 def _compute_apps(run: Runner) -> list[dict]:
     out = run(
         "nvidia-smi",
@@ -81,7 +93,7 @@ def _compute_apps(run: Runner) -> list[dict]:
     for line in out.splitlines():
         if not line.strip():
             continue
-        parts = [p.strip() for p in line.split(",")]
+        parts = _split_csv(line)
         apps.append(
             {
                 "pid": parts[0] if parts else "?",
@@ -287,7 +299,7 @@ def collect(
         return _sysfs_report(sysfs)
 
     line = next((row for row in out.splitlines() if row.strip()), "")
-    fields = [f.strip() for f in line.split(",")]
+    fields = _split_csv(line)
     fields += [""] * (len(_QUERY_FIELDS) - len(fields))
     vals = {key: _na(fields[i]) for i, key in enumerate(_QUERY_FIELDS)}
 

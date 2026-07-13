@@ -94,11 +94,19 @@ def install(config_path: Optional[str] = None) -> Path:
 
 def enable(*, linger: bool = True) -> tuple[bool, Optional[str]]:
     out = run_tool("systemctl", ["--user", "enable", "--now", UNIT_NAME])
-    if linger:
-        # Lets the user service keep running after logout / across reboots.
-        run_tool("loginctl", ["enable-linger", getpass.getuser()])
     if out is None:
         return False, "systemctl --user enable failed (is the user manager running?)"
+    if linger:
+        # Lets the user service keep running after logout / across reboots.
+        # `run_capture` distinguishes "worked" from "absent/failed"; a linger
+        # failure must not report silent success — the service would silently
+        # stop at logout. Surfaced as a warning: the unit itself IS enabled.
+        linger_out = run_capture("loginctl", ["enable-linger", getpass.getuser()])
+        if linger_out is None or linger_out[0] != 0:
+            return True, (
+                "warning: could not enable login-linger (loginctl absent or failed) — "
+                "the service stops at logout; run 'loginctl enable-linger' manually"
+            )
     return True, None
 
 

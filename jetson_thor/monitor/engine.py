@@ -104,7 +104,13 @@ def run_once(
     # next cycle re-detects the same transitions and retries — no silent drop.
     committed = (not events) or (bool(config.webhook_url) and sent)
     persist = new_firing if committed else prev.get("firing", {})
-    state.save_state(state_path, {"firing": persist, "cycle": cycle})
+    # State persistence is best-effort: an unwritable state dir (read-only fs,
+    # disk full) must not crash the loop — next cycle just re-detects.
+    state_error: Optional[str] = None
+    try:
+        state.save_state(state_path, {"firing": persist, "cycle": cycle})
+    except OSError as exc:
+        state_error = f"could not persist state to {state_path}: {exc}"
 
     return {
         "cycle": cycle,
@@ -113,6 +119,8 @@ def run_once(
         "sent": sent,
         "delivered": deliverable,
         "error": error,
+        "state_persisted": state_error is None,
+        "state_error": state_error,
     }
 
 

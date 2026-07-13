@@ -244,6 +244,23 @@ def test_gpu_sums_attributed_memory_when_unified() -> None:
     assert len(rep["data"]["compute_apps"]) == 2
 
 
+def test_gpu_parses_quoted_process_names_with_commas() -> None:
+    # nvidia-smi CSV-quotes fields containing commas; naive split(",") would
+    # shift the used_memory column and corrupt the attributed-memory sum.
+    def runner(name: str, args) -> str:
+        joined = " ".join(args)
+        if "--query-gpu" in joined:
+            return "NVIDIA Thor, 0, 0, 50, 11.75, [N/A], [N/A], [N/A], 2398, [N/A]\n"
+        if "--query-compute-apps" in joined:
+            return '1234, "my app, with comma", 512\n'
+        return ""
+
+    rep = gpu.collect(runner=runner)
+    apps = rep["data"]["compute_apps"]
+    assert apps[0]["name"] == "my app, with comma"
+    assert rep["data"]["gpu_attributed_mib"] == 512
+
+
 def test_gpu_unavailable_without_nvidia_smi(tmp_path) -> None:
     # Inject empty sysfs roots too, so this is the fully-degraded path even
     # when run on real Jetson Thor hardware (see tests/test_probe_jetson.py

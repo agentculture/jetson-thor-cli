@@ -297,6 +297,25 @@ def test_run_once_no_webhook_does_not_commit(tmp_path) -> None:
     assert len(r2["events"]) == len(r["events"])
 
 
+def test_run_once_survives_unwritable_state(tmp_path) -> None:
+    # "Never raises": an unwritable state path (read-only fs, disk full) must
+    # not crash the loop — the cycle completes and reports the persistence gap.
+    blocker = tmp_path / "not-a-dir"
+    blocker.write_text("occupied", encoding="utf-8")
+    sp = blocker / "state.json"  # parent is a file -> mkdir/write raises OSError
+    cfg = Config(webhook_url=None, thresholds=mconfig.DEFAULT_THRESHOLDS)
+    r = engine.run_once(cfg, state_path=sp, snap=_HOT_SNAPSHOT)
+    assert r["state_persisted"] is False
+    assert "could not persist state" in r["state_error"]
+    assert r["alerts"]  # evaluation still happened
+
+
+def test_run_once_reports_state_persisted(tmp_path) -> None:
+    cfg = Config(webhook_url=None, thresholds=mconfig.DEFAULT_THRESHOLDS)
+    r = engine.run_once(cfg, state_path=tmp_path / "state.json", snap=_HOT_SNAPSHOT)
+    assert r["state_persisted"] is True and r["state_error"] is None
+
+
 def test_run_once_delivery_failure_retries(tmp_path) -> None:
     sp = tmp_path / "state.json"
     cfg = Config(webhook_url="https://x", thresholds=mconfig.DEFAULT_THRESHOLDS)
@@ -420,6 +439,26 @@ def test_systemd_enable_disable_stubbed(monkeypatch) -> None:
     assert ok is True and err is None
     ok2, _ = systemd.disable()
     assert ok2 is True
+
+
+def test_systemd_enable_linger_success_is_silent(monkeypatch) -> None:
+    monkeypatch.setattr("jetson_thor.monitor.systemd.run_tool", lambda _n, _a: "ok")
+    monkeypatch.setattr("jetson_thor.monitor.systemd.run_capture", lambda _n, _a: (0, ""))
+    ok, err = systemd.enable(linger=True)
+    assert ok is True and err is None
+
+
+def test_systemd_enable_linger_failure_warns(monkeypatch) -> None:
+    # loginctl absent (None) or failing (non-zero) must not report silent
+    # success — the unit is enabled but stops at logout, so warn.
+    monkeypatch.setattr("jetson_thor.monitor.systemd.run_tool", lambda _n, _a: "ok")
+    for capture in (None, (1, "Access denied")):
+        monkeypatch.setattr(
+            "jetson_thor.monitor.systemd.run_capture", lambda _n, _a, _c=capture: _c
+        )
+        ok, err = systemd.enable(linger=True)
+        assert ok is True
+        assert err is not None and "linger" in err
 
 
 def test_systemd_status_shape() -> None:
