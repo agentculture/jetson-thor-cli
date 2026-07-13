@@ -1,20 +1,38 @@
-"""``thor gpu`` — Blackwell GPU snapshot via nvidia-smi.
+"""``thor gpu`` — Blackwell GPU snapshot via nvidia-smi, with a sysfs fallback.
 
 Jetson Thor's GPU shares one unified memory pool with the CPU cores — there is
 no discrete VRAM — so ``nvidia-smi`` reports ``memory.total``/``memory.used``
 as ``[N/A]``. This collector surfaces utilization, temperature, power and
 clocks honestly and points at ``thor memory`` for the shared pool instead of
-inventing a VRAM number. Reads are graceful: no ``nvidia-smi`` -> unavailable.
+inventing a VRAM number.
 
-Ported as-is from the DGX Spark reference; a later task adapts this collector
-to read Jetson Thor telemetry via ``tegrastats`` where ``nvidia-smi`` isn't
-available.
+On real Thor hardware ``nvidia-smi`` is present but *thin*: it reports
+``name``/``utilization.gpu``/``utilization.memory`` but ``temperature.gpu``,
+``power.draw`` and ``clocks.sm`` all come back ``[N/A]`` — the iGPU doesn't
+expose those counters through NVML the way a discrete card does. When
+nvidia-smi is "unhelpful" like this (or entirely absent), those specific
+fields are backfilled from stable sysfs nodes instead of a streaming
+``tegrastats`` (which never exits on its own and would need special-cased
+process handling to bound):
+
+* clock — the ``gpu-gpc-0`` (or similarly named) node under
+  ``/sys/class/devfreq``.
+* temperature — the ``thermal_zone*`` whose ``type`` contains ``gpu``.
+* power — the ``VDD_GPU`` rail on the INA3221/INA238 power monitors under
+  ``/sys/class/hwmon``.
+
+Whichever fields were filled from sysfs are recorded in
+``data["sysfs_augmented_fields"]`` and reflected in ``source``
+(``"nvidia-smi"``, ``"nvidia-smi+sysfs"``, or plain ``"sysfs"`` when
+nvidia-smi produced nothing at all).
 """
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Optional
 
+from jetson_thor.probe import _run
 from jetson_thor.probe._report import human_bytes, report, unavailable
 from jetson_thor.probe._run import Runner, default_runner
 
@@ -33,6 +51,8 @@ _QUERY_FIELDS = [
     "fan.speed",
 ]
 
+_GPU_RAIL_LABEL = "VDD_GPU"
+
 
 def _na(value: str) -> Optional[str]:
     """Return a cleaned value, or ``None`` for nvidia-smi's ``[N/A]`` tokens."""
@@ -44,6 +64,10 @@ def _na(value: str) -> Optional[str]:
 
 def _fmt(value: Optional[str], unit: str = "") -> str:
     return f"{value}{unit}" if value is not None else "n/a"
+
+
+def _fmt_num(value: Optional[float], unit: str = "", digits: int = 1) -> str:
+    return f"{value:.{digits}f}{unit}" if value is not None else "n/a"
 
 
 def _compute_apps(run: Runner) -> list[dict]:
@@ -95,15 +119,172 @@ def _app_items(apps: list) -> list[str]:
     return [f"{a['pid']:>8} {a['name']} ({_fmt(a['used_mib'], ' MiB')})" for a in apps]
 
 
-def collect(runner: Optional[Runner] = None) -> dict:
-    """Return a GPU report using ``runner`` (injectable; defaults to nvidia-smi)."""
+def _smi_unhelpful(vals: dict) -> bool:
+    """True when nvidia-smi gave only name/utilization — no temp/power/clock.
+
+    Real behavior on Thor: the iGPU's NVML surface reports these three as
+    ``[N/A]`` even though nvidia-smi itself is present and working.
+    """
+    return (
+        vals["temperature.gpu"] is None and vals["power.draw"] is None and vals["clocks.sm"] is None
+    )
+
+
+def _sysfs_clock_mhz(devfreq_root: Path) -> tuple[Optional[float], Optional[float]]:
+    """Return ``(cur_mhz, pct_of_max)`` from the GPU's devfreq node, if any.
+
+    Prefers a node with "gpc" in its name (the 3D/graphics clock) over other
+    GPU-adjacent devfreq nodes (e.g. the video decoder, "nvd").
+    """
+    if not devfreq_root.is_dir():
+        return None, None
+    candidates = sorted(devfreq_root.glob("*gpu*"), key=lambda p: 0 if "gpc" in p.name else 1)
+    for node in candidates:
+        cur = _run.read_first_line(node / "cur_freq")
+        if not cur:
+            continue
+        try:
+            cur_hz = int(cur)
+        except ValueError:
+            continue
+        mx = _run.read_first_line(node / "max_freq")
+        try:
+            max_hz = int(mx) if mx else None
+        except ValueError:
+            max_hz = None
+        pct = round(100.0 * cur_hz / max_hz, 1) if max_hz else None
+        return cur_hz / 1_000_000.0, pct
+    return None, None
+
+
+def _sysfs_temp_c(thermal_root: Path) -> Optional[float]:
+    """Read the first ``thermal_zone*`` whose type mentions "gpu"."""
+    if not thermal_root.is_dir():
+        return None
+    for zdir in sorted(thermal_root.glob("thermal_zone*")):
+        ztype = _run.read_first_line(zdir / "type") or ""
+        if "gpu" not in ztype.lower():
+            continue
+        raw = _run.read_first_line(zdir / "temp")
+        if not raw:
+            continue
+        try:
+            return int(raw) / 1000.0
+        except ValueError:
+            continue
+    return None
+
+
+def _rail_power_w(hdir: Path, idx: str) -> Optional[float]:
+    """Power for hwmon channel ``idx``: prefer ``power{idx}_input`` (uW)."""
+    raw = _run.read_first_line(hdir / f"power{idx}_input")
+    if raw:
+        try:
+            return int(raw) / 1_000_000.0
+        except ValueError:
+            pass
+    volt = _run.read_first_line(hdir / f"in{idx}_input")
+    curr = _run.read_first_line(hdir / f"curr{idx}_input")
+    if volt and curr:
+        try:
+            return int(volt) * int(curr) / 1_000_000.0  # mV * mA -> mW, then /1000 -> W
+        except ValueError:
+            pass
+    return None
+
+
+def _sysfs_power_w(hwmon_root: Path, label: str = _GPU_RAIL_LABEL) -> Optional[float]:
+    """Find the hwmon channel labeled ``label`` (e.g. "VDD_GPU") and read its power."""
+    if not hwmon_root.is_dir():
+        return None
+    for hdir in sorted(hwmon_root.glob("hwmon*")):
+        for label_path in sorted(hdir.glob("in*_label")):
+            if _run.read_first_line(label_path) != label:
+                continue
+            idx = label_path.name[len("in") : -len("_label")]
+            power = _rail_power_w(hdir, idx)
+            if power is not None:
+                return power
+        if _run.read_first_line(hdir / "label") == label:
+            power = _rail_power_w(hdir, "1")
+            if power is not None:
+                return power
+    return None
+
+
+def _sysfs_fallback(devfreq_root: Path, thermal_root: Path, hwmon_root: Path) -> dict:
+    clock_mhz, clock_pct = _sysfs_clock_mhz(devfreq_root)
+    return {
+        "clock_mhz": clock_mhz,
+        "clock_pct_of_max": clock_pct,
+        "temperature_c": _sysfs_temp_c(thermal_root),
+        "power_w": _sysfs_power_w(hwmon_root),
+    }
+
+
+def _sysfs_report(sysfs: dict) -> dict:
+    clock_item = f"clock: {_fmt_num(sysfs['clock_mhz'], ' MHz', 0)}"
+    if sysfs["clock_pct_of_max"] is not None:
+        clock_item += f" ({sysfs['clock_pct_of_max']:.0f}% of max)"
+    items = [
+        clock_item,
+        f"temperature: {_fmt_num(sysfs['temperature_c'], ' C')}",
+        f"power: {_fmt_num(sysfs['power_w'], ' W', 2)}",
+        "memory: unified with system RAM (no discrete VRAM); see 'thor memory'",
+    ]
+    sections = [{"title": "GPU (sysfs)", "items": items}]
+    warnings = _warn_hot(
+        f"{sysfs['temperature_c']}" if sysfs["temperature_c"] is not None else None
+    )
+    data = {"gpu": sysfs, "compute_apps": [], "gpu_attributed_mib": 0}
+    return report("gpu", source="sysfs", sections=sections, warnings=warnings, data=data)
+
+
+def _augment_from_sysfs(
+    vals: dict, devfreq_root: Path, thermal_root: Path, hwmon_root: Path
+) -> list[str]:
+    """Backfill temp/power/clock into ``vals`` from sysfs; return filled field names."""
+    sysfs = _sysfs_fallback(devfreq_root, thermal_root, hwmon_root)
+    filled: list[str] = []
+    if sysfs["temperature_c"] is not None:
+        vals["temperature.gpu"] = f"{sysfs['temperature_c']:.1f}"
+        filled.append("temperature.gpu")
+    if sysfs["power_w"] is not None:
+        vals["power.draw"] = f"{sysfs['power_w']:.2f}"
+        filled.append("power.draw")
+    if sysfs["clock_mhz"] is not None:
+        vals["clocks.sm"] = f"{sysfs['clock_mhz']:.0f}"
+        filled.append("clocks.sm")
+    return filled
+
+
+def collect(
+    runner: Optional[Runner] = None,
+    devfreq_root: str = "/sys/class/devfreq",
+    thermal_root: str = "/sys/class/thermal",
+    hwmon_root: str = "/sys/class/hwmon",
+) -> dict:
+    """Return a GPU report using ``runner`` (injectable; defaults to nvidia-smi).
+
+    ``devfreq_root``/``thermal_root``/``hwmon_root`` are injectable sysfs roots
+    used only when nvidia-smi is absent or reports temp/power/clock as N/A.
+    """
     run = runner or default_runner
     out = run(
         "nvidia-smi",
         ["--query-gpu=" + ",".join(_QUERY_FIELDS), "--format=csv,noheader,nounits"],
     )
+
     if out is None:
-        return unavailable("gpu", "nvidia-smi", "install NVIDIA drivers / run on Jetson Thor")
+        sysfs = _sysfs_fallback(Path(devfreq_root), Path(thermal_root), Path(hwmon_root))
+        if not any(v is not None for v in sysfs.values()):
+            return unavailable(
+                "gpu",
+                "nvidia-smi, sysfs",
+                "install NVIDIA drivers / run on Jetson Thor "
+                "(with devfreq + hwmon nodes present)",
+            )
+        return _sysfs_report(sysfs)
 
     line = next((row for row in out.splitlines() if row.strip()), "")
     fields = [f.strip() for f in line.split(",")]
@@ -115,6 +296,15 @@ def collect(runner: Optional[Runner] = None) -> dict:
     # closest honest answer to "GPU memory used" on Jetson Thor.
     apps = _compute_apps(run)
     gpu_mem_mib = sum(int(a["used_mib"]) for a in apps if a["used_mib"] and a["used_mib"].isdigit())
+
+    source = "nvidia-smi"
+    sysfs_fields: list[str] = []
+    if _smi_unhelpful(vals):
+        sysfs_fields = _augment_from_sysfs(
+            vals, Path(devfreq_root), Path(thermal_root), Path(hwmon_root)
+        )
+        if sysfs_fields:
+            source = "nvidia-smi+sysfs"
 
     sections = [
         {
@@ -132,10 +322,15 @@ def collect(runner: Optional[Runner] = None) -> dict:
         {"title": "GPU compute processes", "items": _app_items(apps)},
     ]
 
-    data = {"gpu": vals, "compute_apps": apps, "gpu_attributed_mib": gpu_mem_mib}
+    data = {
+        "gpu": vals,
+        "compute_apps": apps,
+        "gpu_attributed_mib": gpu_mem_mib,
+        "sysfs_augmented_fields": sysfs_fields,
+    }
     return report(
         "gpu",
-        source="nvidia-smi",
+        source=source,
         sections=sections,
         warnings=_warn_hot(vals["temperature.gpu"]),
         data=data,

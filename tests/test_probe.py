@@ -244,8 +244,16 @@ def test_gpu_sums_attributed_memory_when_unified() -> None:
     assert len(rep["data"]["compute_apps"]) == 2
 
 
-def test_gpu_unavailable_without_nvidia_smi() -> None:
-    rep = gpu.collect(runner=lambda _n, _a: None)
+def test_gpu_unavailable_without_nvidia_smi(tmp_path) -> None:
+    # Inject empty sysfs roots too, so this is the fully-degraded path even
+    # when run on real Jetson Thor hardware (see tests/test_probe_jetson.py
+    # for the sysfs-fallback paths this collector also supports).
+    rep = gpu.collect(
+        runner=lambda _n, _a: None,
+        devfreq_root=str(tmp_path / "no-devfreq"),
+        thermal_root=str(tmp_path / "no-thermal"),
+        hwmon_root=str(tmp_path / "no-hwmon"),
+    )
     assert rep["available"] is False
     assert rep["remediation"]
 
