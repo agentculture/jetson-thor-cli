@@ -1,0 +1,280 @@
+{
+  "slug": "jetson-thor-cli-0-5-0-ships-the-machine-scope-fron",
+  "title": "jetson-thor-cli 0.5.0 ships the machine-scope front ported from dgx-spark-cli: eight read-only host-telemetry verbs (status, memory, gpu, disk, thermal, containers, network, processes), a swap noun group (overview, status, grow, history, sample), and an AI-free webhook monitor watchdog \u2014 all adapted to Jetson Thor (Tegra/L4T), with Jetson-specific power-mode and clocks telemetry added, so an agent can track this Jetson Thor properly with zero runtime dependencies",
+  "schema_version": 2,
+  "status": "exported",
+  "created": "2026-07-13T17:55:29Z",
+  "updated": "2026-07-13T18:00:13Z",
+  "claims": [
+    {
+      "id": "c1",
+      "kind": "announcement",
+      "text": "jetson-thor-cli 0.5.0 ships the machine-scope front ported from dgx-spark-cli: eight read-only host-telemetry verbs (status, memory, gpu, disk, thermal, containers, network, processes), a swap noun group (overview, status, grow, history, sample), and an AI-free webhook monitor watchdog \u2014 all adapted to Jetson Thor (Tegra/L4T), with Jetson-specific power-mode and clocks telemetry added, so an agent can track this Jetson Thor properly with zero runtime dependencies",
+      "origin": "user",
+      "status": "confirmed",
+      "honesty_conditions": [
+        {
+          "id": "h6",
+          "text": "version 0.5.0 on main ships all three feature layers plus the Jetson additions in one release, verified by the success-signal checks",
+          "status": "confirmed",
+          "instruction": ""
+        }
+      ],
+      "hard_questions": [],
+      "links": [],
+      "instruction": "implement as one PR series: probe port, swap port, monitor port, Jetson power/L4T additions, docs+catalog; bump to 0.5.0 via the version-bump skill"
+    },
+    {
+      "id": "c2",
+      "kind": "audience",
+      "text": "agents (Claude Code, the colleague backend, mesh peers) and the human operator driving this Jetson Thor host",
+      "origin": "user",
+      "status": "confirmed",
+      "honesty_conditions": [
+        {
+          "id": "h7",
+          "text": "an agent that has never seen the repo can drive the new surface from thor learn + explain alone",
+          "status": "confirmed",
+          "instruction": ""
+        }
+      ],
+      "hard_questions": [],
+      "links": [],
+      "instruction": "verify by running thor learn --json and thor explain <path> for every new noun/verb and checking each output names the real flags"
+    },
+    {
+      "id": "c3",
+      "kind": "before_state",
+      "text": "jetson-thor-cli is a bare template: only identity/introspection verbs (whoami, learn, explain, overview, doctor); zero Jetson-domain functionality \u2014 the device cannot be tracked through the CLI at all",
+      "origin": "user",
+      "status": "confirmed",
+      "honesty_conditions": [
+        {
+          "id": "h8",
+          "text": "on main today, thor exposes exactly the five template verbs and nothing Jetson-specific",
+          "status": "confirmed",
+          "instruction": ""
+        }
+      ],
+      "hard_questions": [],
+      "links": [],
+      "instruction": "verify with uv run thor overview on main before branching"
+    },
+    {
+      "id": "c4",
+      "kind": "after_state",
+      "text": "one CLI (thor) exposes live host telemetry, swap management with history, and an always-on webhook watchdog, all --json, structured errors, zero runtime dependencies \u2014 an agent can learn and drive the full surface without docs",
+      "origin": "user",
+      "status": "confirmed",
+      "honesty_conditions": [
+        {
+          "id": "h9",
+          "text": "every new verb supports --json, keeps stdout/stderr split, and raises CliError (never a traceback); dependencies = [] is unchanged in pyproject.toml",
+          "status": "confirmed",
+          "instruction": ""
+        }
+      ],
+      "hard_questions": [],
+      "links": [],
+      "instruction": "add tests asserting --json parses, stderr is empty on success, and pyproject dependencies stays empty"
+    },
+    {
+      "id": "c5",
+      "kind": "why_it_matters",
+      "text": "the Thor runs heavy AI workloads in 122GiB unified CPU+GPU memory; memory pressure, thermals, and swap are the real failure modes, and today nothing tracks them",
+      "origin": "user",
+      "status": "confirmed",
+      "honesty_conditions": [
+        {
+          "id": "h10",
+          "text": "thor status surfaces memory/swap/thermal anomalies first, matching what free/swapon/thermal sysfs report on this host",
+          "status": "confirmed",
+          "instruction": ""
+        }
+      ],
+      "hard_questions": [],
+      "links": [],
+      "instruction": "cross-check thor status --json numbers against free -b and /sys/class/thermal on this machine in the verify step"
+    },
+    {
+      "id": "c6",
+      "kind": "boundary",
+      "text": "no AI in the watchdog, no new runtime dependencies (dependencies = [] stays), no mutation verbs beyond swap grow --apply and monitor service management; not a jtop replacement UI \u2014 read-only JSON-first telemetry",
+      "origin": "user",
+      "status": "confirmed",
+      "honesty_conditions": [
+        {
+          "id": "h11",
+          "text": "no third-party import appears anywhere under jetson_thor/ and the only mutating code paths are swap grow --apply and monitor install/enable/disable/uninstall",
+          "status": "confirmed",
+          "instruction": ""
+        }
+      ],
+      "hard_questions": [],
+      "links": [],
+      "instruction": "enforce with a test that imports every module and scans for non-stdlib imports; audit mutation paths in review"
+    },
+    {
+      "id": "c7",
+      "kind": "success_signal",
+      "text": "on this host: uv run thor status/memory/gpu/thermal/swap status all return real numbers with exit 0; thor doctor and the teken rubric gate stay green; full pytest + lint suite passes; monitor test delivers a webhook POST",
+      "origin": "user",
+      "status": "confirmed",
+      "honesty_conditions": [
+        {
+          "id": "h12",
+          "text": "each listed command has been run on this Jetson Thor and its real output recorded in the PR description",
+          "status": "confirmed",
+          "instruction": ""
+        }
+      ],
+      "hard_questions": [],
+      "links": [],
+      "instruction": "run the full check matrix (verbs, doctor, rubric gate, pytest, lint, monitor test) on-device before opening the PR"
+    },
+    {
+      "id": "c8",
+      "kind": "requirement",
+      "text": "Port the probe package (status, memory, gpu, disk, thermal, containers, network, processes) as top-level thor verbs, adapted to Tegra: /proc + /sys collectors unchanged; gpu collector prefers tegrastats/sysfs and falls back to nvidia-smi; every collector degrades gracefully (available: false, exit 0) when a tool is missing",
+      "origin": "llm",
+      "status": "confirmed",
+      "honesty_conditions": [
+        {
+          "id": "h1",
+          "text": "each of the eight verbs, run on this Jetson Thor, exits 0 and returns real values (or available:false for genuinely absent subsystems) in both text and --json modes",
+          "status": "confirmed",
+          "instruction": ""
+        }
+      ],
+      "hard_questions": [],
+      "links": [],
+      "instruction": "create jetson_thor/probe/ mirroring spark/probe (_run, _report, host, memory, disk, thermal, network, processes, containers, gpu, status); adapt gpu.py to try nvidia-smi then tegrastats/sysfs; register a machine.py command module exposing the eight top-level verbs; port the corresponding tests"
+    },
+    {
+      "id": "c9",
+      "kind": "requirement",
+      "text": "Port the swap noun group (thor swap overview/status/grow/history/sample) including sar trend, per-process history state, dry-run-by-default grow with --apply and --ephemeral, and the documented systemd timer for sampling",
+      "origin": "llm",
+      "status": "confirmed",
+      "honesty_conditions": [
+        {
+          "id": "h2",
+          "text": "thor swap status works without root; thor swap grow 64G without --apply changes nothing and prints the exact command plan; history/sample round-trip per-process state on disk",
+          "status": "confirmed",
+          "instruction": ""
+        }
+      ],
+      "hard_questions": [],
+      "links": [],
+      "instruction": "create jetson_thor/swap/ from spark/swap (state, sar, history, grow, apply) and a swap.py command module with overview/status/grow/history/sample; keep grow dry-run default with --apply/--ephemeral; document the systemd sample timer in README"
+    },
+    {
+      "id": "c10",
+      "kind": "requirement",
+      "text": "Port the monitor noun group (check/once/run/test/config/install/enable/disable/status/uninstall): threshold rules, edge-triggered generic/slack/discord webhooks, startup liveness ping, systemd --user unit; config at ~/.config/jetson-thor/monitor.json with THOR_WEBHOOK_URL-style env override",
+      "origin": "llm",
+      "status": "confirmed",
+      "honesty_conditions": [
+        {
+          "id": "h3",
+          "text": "monitor check evaluates all thresholds against live collectors with no state change, and monitor test delivers a real POST to a configured webhook; a standing alert fires exactly once (edge-triggered)",
+          "status": "confirmed",
+          "instruction": ""
+        }
+      ],
+      "hard_questions": [],
+      "links": [],
+      "instruction": "create jetson_thor/monitor/ from spark/monitor (config, rules, engine, notify, state, systemd) and a monitor.py command module with check/once/run/test/config/install/enable/disable/status/uninstall; config dir and env var use the jetson-thor name settled in v2"
+    },
+    {
+      "id": "c11",
+      "kind": "requirement",
+      "text": "Add Jetson-specific telemetry beyond the Spark port: a power verb (nvpmodel mode, jetson_clocks state, per-rail power from sysfs/tegrastats) and L4T/JetPack identity (from /etc/nv_tegra_release) surfaced in status and overview",
+      "origin": "llm",
+      "status": "confirmed",
+      "honesty_conditions": [
+        {
+          "id": "h4",
+          "text": "thor power reports the active nvpmodel mode and jetson_clocks state on this host, and gracefully degrades on a non-Jetson machine; L4T R38.2.2 appears in thor status",
+          "status": "confirmed",
+          "instruction": ""
+        }
+      ],
+      "hard_questions": [],
+      "links": [],
+      "instruction": "add a power probe reading nvpmodel -q, jetson_clocks --show, and sysfs power rails, exposed as thor power; parse /etc/nv_tegra_release into an l4t field surfaced in status and overview; both degrade gracefully off-Jetson"
+    },
+    {
+      "id": "c12",
+      "kind": "requirement",
+      "text": "Every new noun/verb gets an explain catalog entry, learn/overview mention, tests keeping coverage >= 60, and the three-way thor naming invariant stays intact; version-bump to 0.5.0 with changelog",
+      "origin": "llm",
+      "status": "confirmed",
+      "honesty_conditions": [
+        {
+          "id": "h5",
+          "text": "uv run teken cli doctor . --strict passes and every catalog path resolves (test_every_catalog_path_resolves green) after the port",
+          "status": "confirmed",
+          "instruction": ""
+        }
+      ],
+      "hard_questions": [],
+      "links": [],
+      "instruction": "add catalog entries for every new noun/verb path, extend learn/overview text, extend test_every_catalog_path_resolves coverage, run the full lint+rubric matrix, and use the version-bump skill for 0.5.0"
+    },
+    {
+      "id": "c13",
+      "kind": "decision",
+      "text": "Follow the repo's noun-group pattern: new modules under jetson_thor/cli/_commands/ with register(), probe/swap/monitor as sibling packages under jetson_thor/ \u2014 mirror dgx-spark-cli's layout, do not bolt onto template verbs",
+      "origin": "llm",
+      "status": "confirmed",
+      "honesty_conditions": [],
+      "hard_questions": [],
+      "links": [],
+      "instruction": ""
+    },
+    {
+      "id": "c14",
+      "kind": "assumption",
+      "text": "dgx-spark-cli's collectors are directly reusable because Thor is also aarch64 Linux with unified memory; verified on this host: tegrastats, nvidia-smi, nvpmodel, jetson_clocks, docker, ip, sar all present on L4T R38.2.2",
+      "origin": "llm",
+      "status": "confirmed",
+      "honesty_conditions": [],
+      "hard_questions": [],
+      "links": [],
+      "instruction": ""
+    },
+    {
+      "id": "c15",
+      "kind": "non_goal",
+      "text": "No flashing/provisioning, no fan or power-mode mutation (nvpmodel -m), no container lifecycle management, no historical dashboards \u2014 read-only telemetry plus the two existing mutation surfaces (swap grow, monitor service) only",
+      "origin": "llm",
+      "status": "confirmed",
+      "honesty_conditions": [],
+      "hard_questions": [],
+      "links": [],
+      "instruction": ""
+    }
+  ],
+  "open_vagueness": [
+    {
+      "id": "v1",
+      "text": "exact GPU metric source on Thor: whether nvidia-smi reports utilization/temp/power usefully on iGPU or whether tegrastats/sysfs parsing is required \u2014 decided empirically during implementation, collector must handle both",
+      "kind": "unknown_nonblocking",
+      "claim_id": null
+    },
+    {
+      "id": "v2",
+      "text": "webhook env var + config dir naming (THOR_WEBHOOK_URL vs JETSON_THOR_WEBHOOK_URL; ~/.config/jetson-thor/) \u2014 cosmetic, settle at implementation",
+      "kind": "unknown_nonblocking",
+      "claim_id": null
+    },
+    {
+      "id": "v3",
+      "text": "whether to also port dgx-spark-cli's contention (iowait/blocked-process) probe into monitor rules \u2014 include if the port is mechanical",
+      "kind": "follow_up",
+      "claim_id": null
+    }
+  ],
+  "scope_entries": []
+}
