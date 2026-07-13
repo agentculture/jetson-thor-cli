@@ -17,6 +17,10 @@ def test_overview_text(capsys: pytest.CaptureFixture[str]) -> None:
     out = capsys.readouterr().out
     assert "# thor" in out
     assert "Identity" in out
+    # Machine scope, swap, and monitor noun groups must be listed too.
+    assert "status — machine-wide Jetson Thor scope" in out
+    assert "swap —" in out
+    assert "monitor —" in out
 
 
 def test_overview_json_shape(capsys: pytest.CaptureFixture[str]) -> None:

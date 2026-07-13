@@ -1,6 +1,6 @@
 [project]
 name = "jetson-thor-cli"
-version = "0.4.1"
+version = "0.5.0"
 description = "Agent and CLI for operating NVIDIA Jetson Thor (Blackwell-based robotics/edge-AI compute, Orin's successor) — provisioning, inference, and on-device ops."
 readme = "README.md"
 license = "Apache-2.0"
