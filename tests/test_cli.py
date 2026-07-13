@@ -66,6 +66,12 @@ def test_learn_text(capsys: pytest.CaptureFixture[str]) -> None:
     assert "Exit-code policy" in out
     assert "--json" in out
     assert "explain" in out
+    # Machine scope, swap, and monitor surfaces must be taught too.
+    assert "thor status" in out
+    assert "thor power" in out
+    assert "thor swap grow SIZE" in out
+    assert "thor monitor check" in out
+    assert "JETSON_THOR_WEBHOOK_URL" in out
 
 
 def test_learn_json(capsys: pytest.CaptureFixture[str]) -> None:
@@ -75,6 +81,17 @@ def test_learn_json(capsys: pytest.CaptureFixture[str]) -> None:
     assert payload["tool"] == "thor"
     assert payload["version"] == __version__
     assert payload["json_support"] is True
+    paths = [tuple(c["path"]) for c in payload["commands"]]
+    for expected in [
+        ("status",),
+        ("gpu",),
+        ("power",),
+        ("swap", "status"),
+        ("swap", "grow"),
+        ("monitor", "check"),
+        ("monitor", "run"),
+    ]:
+        assert expected in paths, f"missing {expected} from learn --json commands"
 
 
 # --- explain --------------------------------------------------------------
