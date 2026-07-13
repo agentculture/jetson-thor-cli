@@ -9,7 +9,7 @@ hwmon rails, and ``/etc/nv_tegra_release``).
 
 from __future__ import annotations
 
-from jetson_thor.probe import gpu, l4t, power
+from jetson_thor.probe import gpu, l4t, power, status
 
 # --- gpu: sysfs fixture builder --------------------------------------------
 
@@ -267,3 +267,20 @@ def test_l4t_unavailable_on_malformed_content(tmp_path) -> None:
     rep = l4t.collect(str(path))
     assert rep["available"] is False
     assert rep["remediation"]
+
+
+# --- l4t folded into status ------------------------------------------------
+
+
+def test_status_includes_l4t_when_present(tmp_path) -> None:
+    path = tmp_path / "nv_tegra_release"
+    path.write_text(_NV_TEGRA_RELEASE)
+    rep = status.collect(runner=lambda _n, _a: None, l4t_path=str(path))
+    assert rep["data"]["host"]["l4t"] == "R38.2.2"
+
+
+def test_status_l4t_is_none_off_jetson(tmp_path) -> None:
+    rep = status.collect(
+        runner=lambda _n, _a: None, l4t_path=str(tmp_path / "no-such-nv_tegra_release")
+    )
+    assert rep["data"]["host"]["l4t"] is None
