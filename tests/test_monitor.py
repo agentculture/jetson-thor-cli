@@ -367,10 +367,23 @@ def test_notify_started_never_raises_on_internal_error() -> None:
     assert ok is False and "kaboom" in err
 
 
-def test_snapshot_runs_on_host() -> None:
+def test_snapshot_runs_on_host(monkeypatch, tmp_path) -> None:
+    # Blank the sysfs fallback roots too — on real Jetson hardware the gpu
+    # probe backfills from devfreq/thermal/hwmon even with nvidia-smi dark.
+    real_gpu_collect = engine.gpu.collect
+    monkeypatch.setattr(
+        engine.gpu,
+        "collect",
+        lambda runner: real_gpu_collect(
+            runner,
+            devfreq_root=str(tmp_path / "devfreq"),
+            thermal_root=str(tmp_path / "thermal"),
+            hwmon_root=str(tmp_path / "hwmon"),
+        ),
+    )
     snap = engine.snapshot(runner=lambda _n, _a: None)  # tool-backed subsystems dark
     assert "memory" in snap and "available" in snap
-    assert snap["available"]["gpu"] is False  # fake runner -> nvidia-smi "absent"
+    assert snap["available"]["gpu"] is False  # no nvidia-smi, no sysfs nodes
 
 
 # --- systemd --------------------------------------------------------------
