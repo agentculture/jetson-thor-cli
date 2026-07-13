@@ -18,7 +18,7 @@ A clonable template for AgentCulture mesh agents. It carries an agent-first CLI
 buildable/deployable package baseline. Clone it, rename the package, edit
 `culture.yaml`, and you have a new agent.
 
-## Verbs
+## Agent verbs
 
 - `thor whoami` — identity probe from `culture.yaml`.
 - `thor learn` — structured self-teaching prompt.
@@ -28,6 +28,22 @@ buildable/deployable package baseline. Clone it, rename the package, edit
 - `thor cli overview` — describe the CLI surface.
 - `thor monitor` — deterministic, AI-free threshold watchdog that webhooks on
   catastrophes.
+
+## Machine-scope verbs (Jetson Thor host telemetry)
+
+- `thor status` — machine-wide scope, anomalies first (the headline); includes
+  the flashed L4T release.
+- `thor memory` — unified RAM + swap (CPU and iGPU share one pool).
+- `thor gpu` — Jetson Thor iGPU: utilization, temp, power, GPU processes.
+- `thor disk` — filesystem usage for real block devices.
+- `thor thermal` — SoC thermal zones and hwmon sensors.
+- `thor containers` — running Docker containers and health.
+- `thor network` — interfaces, default route, reachable addresses.
+- `thor processes` — top processes by resident memory.
+- `thor power` — nvpmodel mode, jetson_clocks state, per-rail power draw.
+
+All machine-scope verbs are read-only, support `--json`, and exit 0 even when a
+subsystem is absent (it reports `available: false`). `doctor` is the health gate.
 
 ## Exit-code policy
 
@@ -115,6 +131,158 @@ itself (distinct from the global `overview`, which describes the agent).
 
     thor cli overview
     thor cli overview --json
+"""
+
+_STATUS = """\
+# thor status
+
+Machine-wide scope of Jetson Thor, anomalies first. Calls every domain
+collector once and prints a Host header (including the flashed L4T release,
+e.g. `R38.2.2`, read from `/etc/nv_tegra_release`), an Attention block (merged
+warnings from all subsystems), and a compact one-liner per subsystem. The
+headline entry point — drill into any line with its verb (`memory`, `gpu`, …).
+
+The L4T field degrades to `n/a` off-Jetson (the release file only exists on a
+flashed Jetson board) rather than raising.
+
+Read-only; exits 0 even if a subsystem is unavailable.
+
+## Usage
+
+    thor status
+    thor status --json
+"""
+
+_MEMORY = """\
+# thor memory
+
+Unified memory + swap snapshot from `/proc/meminfo`. On Jetson Thor the CPU
+cores and Blackwell iGPU share ONE memory pool — there is no separate VRAM —
+so memory pressure here is a GPU-workload signal too. Warns on low available
+memory or heavy swap use.
+
+## Usage
+
+    thor memory
+    thor memory --json
+"""
+
+_GPU = """\
+# thor gpu
+
+Jetson Thor iGPU snapshot via `nvidia-smi`, with a sysfs fallback. Because
+memory is unified, `nvidia-smi` reports aggregate `memory.total/used` as
+`[N/A]`; this verb instead sums the per-process compute-app memory to report
+how much of the shared pool is attributed to the GPU.
+
+On real Thor hardware `nvidia-smi` is present but *thin*: it reports
+`name`/`utilization.gpu`/`utilization.memory`, but `temperature.gpu`,
+`power.draw`, and `clocks.sm` come back `[N/A]` — the iGPU doesn't expose those
+counters through NVML the way a discrete card does. When nvidia-smi is
+unhelpful like this (or entirely absent), those fields are backfilled from
+stable sysfs nodes instead: `/sys/class/devfreq` (clock), `/sys/class/thermal`
+(GPU thermal zone), and the `VDD_GPU` rail under `/sys/class/hwmon` (power).
+Whichever fields were backfilled are recorded in
+`data["sysfs_augmented_fields"]` and reflected in `source`
+(`nvidia-smi`, `nvidia-smi+sysfs`, or plain `sysfs`). Unavailable (exit 0) only
+when neither nvidia-smi nor any sysfs node yields anything.
+
+## Usage
+
+    thor gpu
+    thor gpu --json
+"""
+
+_DISK = """\
+# thor disk
+
+Filesystem usage for real (non-virtual) block devices, read via `/proc/mounts`
+and `os.statvfs` — no `df` dependency. Virtual filesystems and snap `loop`
+mounts are filtered out. Warns when a filesystem is >=85% full.
+
+## Usage
+
+    thor disk
+    thor disk --json
+"""
+
+_THERMAL = """\
+# thor thermal
+
+SoC thermal zones (`/sys/class/thermal`) and hwmon sensors
+(`/sys/class/hwmon`: nvme, wifi PHY, INA3221/INA238 power monitors, …) in
+Celsius. No `lm-sensors` dependency. GPU die temperature comes from
+`nvidia-smi`/sysfs (see `gpu`). Warns on any sensor at or above 85 C.
+
+## Usage
+
+    thor thermal
+    thor thermal --json
+"""
+
+_CONTAINERS = """\
+# thor containers
+
+Running Docker containers via `docker ps`, with health. Images served from
+`nvcr.io` are tagged GPU-likely (heuristic). Warns on any container reporting
+`(unhealthy)`. Unavailable (exit 0) when docker is absent or the daemon is
+down.
+
+## Usage
+
+    thor containers
+    thor containers --json
+"""
+
+_NETWORK = """\
+# thor network
+
+Interfaces, default route, and reachable addresses, summarized from `ip -br
+addr` and `ip route show default`. Named interfaces (wifi/ethernet/tailscale/
+bridges) are listed with their IPv4; the many container `veth` pairs are rolled
+up to a count. "Reachable" excludes docker bridge gateways and link-local.
+
+## Usage
+
+    thor network
+    thor network --json
+"""
+
+_PROCESSES = """\
+# thor processes
+
+Top processes by resident memory (`VmRSS`), read straight from `/proc` — no
+`ps` dependency. RSS is the right lens on a unified-memory board: the share of
+the one shared pool a process holds resident. Kernel threads (no `VmRSS`) are
+skipped.
+
+## Usage
+
+    thor processes
+    thor processes --json
+"""
+
+_POWER = """\
+# thor power
+
+Jetson Thor power posture from three independent, often root-gated sources:
+
+- `nvpmodel -q` — the active power mode profile (e.g. `MAXN`). Usually
+  readable without root, but degrades to absent rather than assuming access.
+- `jetson_clocks --show` — whether CPU/GPU clocks are pinned to max. Requires
+  root on Thor; a permission failure surfaces as absent data, never a crash.
+- INA3221/INA238-family power monitor chips under `/sys/class/hwmon` —
+  read-only per-rail telemetry (e.g. `VDD_GPU`, `VDD_CPU_SOC_MSS`, `VIN`) that
+  needs no privilege at all.
+
+Each source is read independently and reported on its own; the overall report
+is only `unavailable` when none of the three yielded anything. Read-only;
+exits 0 even when `nvpmodel`/`jetson_clocks` need root you don't have.
+
+## Usage
+
+    thor power
+    thor power --json
 """
 
 _MONITOR = """\
@@ -367,6 +535,15 @@ ENTRIES: dict[tuple[str, ...], str] = {
     ("doctor",): _DOCTOR,
     ("cli",): _CLI,
     ("cli", "overview"): _CLI,
+    ("status",): _STATUS,
+    ("memory",): _MEMORY,
+    ("gpu",): _GPU,
+    ("disk",): _DISK,
+    ("thermal",): _THERMAL,
+    ("containers",): _CONTAINERS,
+    ("network",): _NETWORK,
+    ("processes",): _PROCESSES,
+    ("power",): _POWER,
     ("monitor",): _MONITOR,
     ("monitor", "overview"): _MONITOR,
     ("monitor", "check"): _MONITOR_CHECK,

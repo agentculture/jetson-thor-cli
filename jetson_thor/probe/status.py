@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from jetson_thor.probe import containers, disk, gpu, host, memory, network, processes, thermal
+from jetson_thor.probe import containers, disk, gpu, host, l4t, memory, network, processes, thermal
 from jetson_thor.probe._report import human_bytes, human_duration, report
 from jetson_thor.probe._run import Runner, default_runner
 
@@ -31,6 +31,7 @@ def _host_items(facts: dict, gpu_name: str) -> list[str]:
         f"os: {facts.get('os', 'unknown')} ({facts.get('kernel', '?')} {facts.get('arch', '')})",
         f"cpu: {cpu}",
         f"uptime: {human_duration(facts.get('uptime_seconds'))}, load {facts.get('loadavg', '?')}",
+        f"l4t: {facts.get('l4t') or 'n/a'}",
     ]
     return items
 
@@ -115,10 +116,18 @@ def _processes_line(data: dict) -> str:
     return f"{count} processes; top: {first.get('name')} ({human_bytes(first.get('rss_bytes'))})"
 
 
-def collect(runner: Optional[Runner] = None) -> dict:
-    """Return the machine-wide status report (anomalies first)."""
+def collect(runner: Optional[Runner] = None, l4t_path: str = "/etc/nv_tegra_release") -> dict:
+    """Return the machine-wide status report (anomalies first).
+
+    ``l4t_path`` is injectable (mirrors the other collectors) so tests can
+    simulate a Jetson host without touching the real ``/etc/nv_tegra_release``.
+    On non-Jetson hosts the file is absent and ``facts["l4t"]`` degrades to
+    ``None`` rather than raising.
+    """
     run = runner or default_runner
     facts = host.facts(run)
+    l4t_rep = l4t.collect(l4t_path)
+    facts["l4t"] = (l4t_rep.get("data") or {}).get("l4t") if l4t_rep.get("available") else None
     subs = {
         "memory": memory.collect(),
         "gpu": gpu.collect(run),
