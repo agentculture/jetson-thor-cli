@@ -30,6 +30,12 @@ _VERBS = [
     "explain <path> — markdown docs for a topic",
     "overview — this descriptive snapshot",
     "doctor — check the agent-identity invariants",
+    "status — machine-wide Jetson Thor scope (also: memory, gpu, disk, "
+    "thermal, containers, network, processes, power)",
+    "swap — swap inspection, per-process history, and the guarded grow "
+    "(overview/status/grow/history/sample)",
+    "monitor — AI-free threshold watchdog that webhooks on catastrophes "
+    "(check/once/run/test/config + systemd)",
 ]
 
 
