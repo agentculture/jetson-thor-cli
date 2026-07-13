@@ -14,6 +14,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
+from jetson_thor.monitor import notify
+
 _APP = "jetson-thor"
 
 WEBHOOK_FORMATS = ("generic", "slack", "discord")
@@ -135,7 +137,7 @@ def validate(cfg: Config) -> list[str]:
     errors: list[str] = []
     if not cfg.webhook_url:
         errors.append("webhook_url is not set (config file or JETSON_THOR_WEBHOOK_URL)")
-    elif not str(cfg.webhook_url).startswith(("http://", "https://")):
+    elif notify.sanitize_webhook_url(str(cfg.webhook_url)) is None:
         errors.append("webhook_url must be an http(s) URL")
     if cfg.webhook_format not in WEBHOOK_FORMATS:
         errors.append("webhook_format must be one of: " + ", ".join(WEBHOOK_FORMATS))

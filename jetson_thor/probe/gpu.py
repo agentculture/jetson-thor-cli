@@ -39,16 +39,22 @@ from jetson_thor.probe._run import Runner, default_runner
 
 _HOT_C = 80.0
 
+# nvidia-smi query-field names shared by the query list, the thin-response
+# detection, the sysfs backfill, and the renderers.
+_F_TEMP = "temperature.gpu"
+_F_POWER = "power.draw"
+_F_CLOCK = "clocks.sm"
+
 _QUERY_FIELDS = [
     "name",
     "utilization.gpu",
     "utilization.memory",
-    "temperature.gpu",
-    "power.draw",
+    _F_TEMP,
+    _F_POWER,
     "power.limit",
     "memory.total",
     "memory.used",
-    "clocks.sm",
+    _F_CLOCK,
     "fan.speed",
 ]
 
@@ -137,9 +143,7 @@ def _smi_unhelpful(vals: dict) -> bool:
     Real behavior on Thor: the iGPU's NVML surface reports these three as
     ``[N/A]`` even though nvidia-smi itself is present and working.
     """
-    return (
-        vals["temperature.gpu"] is None and vals["power.draw"] is None and vals["clocks.sm"] is None
-    )
+    return vals[_F_TEMP] is None and vals[_F_POWER] is None and vals[_F_CLOCK] is None
 
 
 def _sysfs_clock_mhz(devfreq_root: Path) -> tuple[Optional[float], Optional[float]]:
@@ -259,14 +263,14 @@ def _augment_from_sysfs(
     sysfs = _sysfs_fallback(devfreq_root, thermal_root, hwmon_root)
     filled: list[str] = []
     if sysfs["temperature_c"] is not None:
-        vals["temperature.gpu"] = f"{sysfs['temperature_c']:.1f}"
-        filled.append("temperature.gpu")
+        vals[_F_TEMP] = f"{sysfs['temperature_c']:.1f}"
+        filled.append(_F_TEMP)
     if sysfs["power_w"] is not None:
-        vals["power.draw"] = f"{sysfs['power_w']:.2f}"
-        filled.append("power.draw")
+        vals[_F_POWER] = f"{sysfs['power_w']:.2f}"
+        filled.append(_F_POWER)
     if sysfs["clock_mhz"] is not None:
-        vals["clocks.sm"] = f"{sysfs['clock_mhz']:.0f}"
-        filled.append("clocks.sm")
+        vals[_F_CLOCK] = f"{sysfs['clock_mhz']:.0f}"
+        filled.append(_F_CLOCK)
     return filled
 
 
@@ -324,9 +328,9 @@ def collect(
             "items": [
                 f"utilization: {_fmt(vals['utilization.gpu'], '%')}"
                 f" (mem ctrl {_fmt(vals['utilization.memory'], '%')})",
-                f"temperature: {_fmt(vals['temperature.gpu'], ' C')}",
-                f"power: {_fmt(vals['power.draw'], ' W')} / {_fmt(vals['power.limit'], ' W')}",
-                f"sm clock: {_fmt(vals['clocks.sm'], ' MHz')}",
+                f"temperature: {_fmt(vals[_F_TEMP], ' C')}",
+                f"power: {_fmt(vals[_F_POWER], ' W')} / {_fmt(vals['power.limit'], ' W')}",
+                f"sm clock: {_fmt(vals[_F_CLOCK], ' MHz')}",
                 f"fan: {_fmt(vals['fan.speed'], '%')}",
                 _memory_line(vals, apps, gpu_mem_mib),
             ],
@@ -344,6 +348,6 @@ def collect(
         "gpu",
         source=source,
         sections=sections,
-        warnings=_warn_hot(vals["temperature.gpu"]),
+        warnings=_warn_hot(vals[_F_TEMP]),
         data=data,
     )

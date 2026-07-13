@@ -129,7 +129,7 @@ def cmd_once(args: argparse.Namespace) -> int:
     events = result["events"]
     if not cfg.webhook_url:
         delivery = (
-            "no webhook configured (set JETSON_THOR_WEBHOOK_URL or run " "'monitor config --init')"
+            "no webhook configured (set JETSON_THOR_WEBHOOK_URL or run 'monitor config --init')"
         )
     elif not events:
         delivery = "no transitions this cycle"

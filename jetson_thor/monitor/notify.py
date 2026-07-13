@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import urllib.error
+import urllib.parse
 import urllib.request
 from typing import Callable, Optional
 
@@ -64,6 +65,23 @@ def render_payload(
     }
 
 
+def sanitize_webhook_url(url: str) -> Optional[str]:
+    """Validate and rebuild the operator-configured webhook URL.
+
+    Allow-lists the scheme (https, plus plain http for LAN/localhost
+    receivers) and reconstructs the URL from its parsed components, so the
+    value handed to ``urllib`` is a vetted absolute http(s) URL — never a
+    ``file://`` or scheme-relative string. Returns ``None`` when invalid.
+    """
+    try:
+        parts = urllib.parse.urlsplit(str(url))
+    except ValueError:
+        return None
+    if parts.scheme not in ("https", "http") or not parts.netloc:
+        return None
+    return urllib.parse.urlunsplit(parts)
+
+
 def _default_open(req: urllib.request.Request, timeout: float) -> object:
     # Scheme is allow-listed by the caller (post) before we get here.
     return urllib.request.urlopen(req, timeout=timeout)  # nosec B310
@@ -78,11 +96,12 @@ def post(
     opener: Optional[Opener] = None,
 ) -> tuple[bool, Optional[str]]:
     """POST ``payload`` as JSON to ``url``. Returns ``(ok, error)``; never raises."""
-    if not str(url).startswith(("http://", "https://")):
+    safe_url = sanitize_webhook_url(url)
+    if safe_url is None:
         return False, "webhook_url must be an http(s) URL"
     body = json.dumps(payload).encode("utf-8")
     request = urllib.request.Request(
-        url,
+        safe_url,
         data=body,
         headers={"Content-Type": "application/json", "User-Agent": _USER_AGENT},
         method="POST",

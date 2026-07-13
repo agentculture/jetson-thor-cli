@@ -216,8 +216,9 @@ def test_current_size_zero_for_fresh_file() -> None:
 
 
 def test_nonpositive_target_is_user_error() -> None:
+    state = _state()
     with pytest.raises(CliError) as excinfo:
-        build_grow_plan(0, state=_state())
+        build_grow_plan(0, state=state)
     assert excinfo.value.code == 1
 
 
@@ -231,14 +232,16 @@ def test_unknown_free_space_warns_not_blocks() -> None:
 
 def test_target_smaller_than_current_is_user_error() -> None:
     # Baseline /swap.img is 8 GiB; a "grow" to 4 GiB would truncate it.
+    state = _state()
     with pytest.raises(CliError) as excinfo:
-        build_grow_plan(4 * GiB, state=_state())
+        build_grow_plan(4 * GiB, state=state)
     assert excinfo.value.code == 1
     assert "grow" in str(excinfo.value).lower()
 
 
 def test_target_equal_to_current_is_user_error() -> None:
     # No-op "grow" to the current 8 GiB size is rejected rather than planned.
+    state = _state()
     with pytest.raises(CliError) as excinfo:
-        build_grow_plan(8 * GiB, state=_state())
+        build_grow_plan(8 * GiB, state=state)
     assert excinfo.value.code == 1

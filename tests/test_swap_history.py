@@ -129,8 +129,10 @@ def test_record_raises_clierror_when_store_unwritable(tmp_path) -> None:
     # Point the store at a path whose parent is a file -> mkdir fails.
     blocker = tmp_path / "blocker"
     blocker.write_text("not a dir\n", encoding="utf-8")
+    store_dir = blocker / "store"
+    proc_root = str(proc)
     with pytest.raises(CliError) as exc:
-        history.record(now=1.0, store_dir=blocker / "store", proc_root=str(proc))
+        history.record(now=1.0, store_dir=store_dir, proc_root=proc_root)
     assert exc.value.code == 2  # environment error
 
 
