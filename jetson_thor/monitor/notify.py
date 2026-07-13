@@ -100,7 +100,12 @@ def post(
     if safe_url is None:
         return False, "webhook_url must be an http(s) URL"
     body = json.dumps(payload).encode("utf-8")
-    request = urllib.request.Request(
+    # S5144 (SSRF taint) is by design here: a webhook notifier's whole job is
+    # POSTing to the operator-configured destination. The URL comes from the
+    # operator's own mode-600 config / env var (no untrusted principal), and
+    # sanitize_webhook_url has already allow-listed the scheme and rebuilt the
+    # value from parsed parts.
+    request = urllib.request.Request(  # NOSONAR python:S5144
         safe_url,
         data=body,
         headers={"Content-Type": "application/json", "User-Agent": _USER_AGENT},
