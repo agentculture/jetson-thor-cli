@@ -300,7 +300,7 @@ def test_gpu_unavailable_without_nvidia_smi(tmp_path) -> None:
     assert rep["remediation"]
 
 
-def _no_gpu_sysfs(tmp_path) -> dict:
+def _no_sysfs(tmp_path) -> dict:
     return {
         "devfreq_root": str(tmp_path / "no-devfreq"),
         "thermal_root": str(tmp_path / "no-thermal"),
@@ -311,7 +311,7 @@ def _no_gpu_sysfs(tmp_path) -> dict:
 def test_gpu_unavailable_reason_not_installed(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
     # Neither nvidia-smi nor any sysfs GPU node: the GPU is simply not there.
     monkeypatch.setattr(gpu.shutil, "which", lambda _n: None)
-    rep = gpu.collect(runner=lambda _n, _a: None, **_no_gpu_sysfs(tmp_path))
+    rep = gpu.collect(runner=lambda _n, _a: None, **_no_sysfs(tmp_path))
     assert rep["reason"] == "not_installed"
 
 
@@ -319,11 +319,11 @@ def test_gpu_unavailable_reason_failed_when_tool_present(
     monkeypatch: pytest.MonkeyPatch, tmp_path
 ) -> None:
     monkeypatch.setattr(gpu.shutil, "which", lambda n: f"/usr/bin/{n}")
-    rep = gpu.collect(runner=lambda _n, _a: None, **_no_gpu_sysfs(tmp_path))
+    rep = gpu.collect(runner=lambda _n, _a: None, **_no_sysfs(tmp_path))
     assert rep["reason"] == "failed"
 
 
-def test_gpu_unavailable_reason_failed_when_sysfs_nodes_unreadable(
+def test_gpu_unavailable_reason_failed_when_sysfs_node_unreadable(
     monkeypatch: pytest.MonkeyPatch, tmp_path
 ) -> None:
     # No nvidia-smi, but a GPU sysfs node exists and yields nothing usable: the
@@ -332,7 +332,7 @@ def test_gpu_unavailable_reason_failed_when_sysfs_nodes_unreadable(
     zone = tmp_path / "thermal" / "thermal_zone0"
     zone.mkdir(parents=True)
     (zone / "type").write_text("gpu-thermal\n")
-    roots = _no_gpu_sysfs(tmp_path)
+    roots = _no_sysfs(tmp_path)
     roots["thermal_root"] = str(tmp_path / "thermal")
     rep = gpu.collect(runner=lambda _n, _a: None, **roots)
     assert rep["available"] is False
