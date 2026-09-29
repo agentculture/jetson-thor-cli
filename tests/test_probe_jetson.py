@@ -137,6 +137,81 @@ def test_gpu_fully_degraded_when_neither_available(tmp_path) -> None:
     assert "sysfs" in rep["source"]
 
 
+# --- gpu: sysfs-built reports speak the nvidia-smi keys monitor/status read
+
+
+def _hot_gpu_collect(tmp_path, monkeypatch):
+    """Patch ``gpu.collect`` to read a 95 C gpu-thermal fixture (no nvidia-smi)."""
+    devfreq, thermal, hwmon = _write_gpu_sysfs(tmp_path)
+    (tmp_path / "thermal" / "thermal_zone1" / "temp").write_text("95000\n")
+    real = gpu.collect
+
+    def _collect(runner=None, **_kw):
+        return real(
+            runner=lambda _n, _a: None,
+            devfreq_root=devfreq,
+            thermal_root=thermal,
+            hwmon_root=hwmon,
+        )
+
+    monkeypatch.setattr(gpu, "collect", _collect)
+
+
+def test_gpu_sysfs_report_carries_nvidia_smi_shaped_keys(tmp_path) -> None:
+    devfreq, thermal, hwmon = _write_gpu_sysfs(tmp_path)
+    rep = gpu.collect(
+        runner=lambda _n, _a: None, devfreq_root=devfreq, thermal_root=thermal, hwmon_root=hwmon
+    )
+    assert rep["source"] == "sysfs"
+    g = rep["data"]["gpu"]
+    assert g["temperature.gpu"] == "48.4"
+    assert g["power.draw"] == f"{g['power_w']:.2f}"
+    assert g["clocks.sm"] == "315"
+    assert g["utilization.gpu"] is None  # sysfs has no utilization source
+    # the sysfs-native keys stay for compatibility
+    assert g["temperature_c"] == 48.406
+    assert g["clock_mhz"] == 315.0
+
+
+def test_gpu_sysfs_report_smi_keys_none_when_unknown(tmp_path) -> None:
+    devfreq, _thermal, _hwmon = _write_gpu_sysfs(tmp_path)
+    rep = gpu.collect(
+        runner=lambda _n, _a: None,
+        devfreq_root=devfreq,
+        thermal_root=str(tmp_path / "no-thermal"),
+        hwmon_root=str(tmp_path / "no-hwmon"),
+    )
+    g = rep["data"]["gpu"]
+    assert g["clocks.sm"] == "315"
+    assert g["temperature.gpu"] is None
+    assert g["power.draw"] is None
+
+
+def test_monitor_gpu_temp_alert_fires_from_sysfs_only_gpu(tmp_path, monkeypatch) -> None:
+    from jetson_thor.monitor import engine
+    from jetson_thor.monitor.config import DEFAULT_THRESHOLDS
+    from jetson_thor.monitor.rules import evaluate
+
+    _hot_gpu_collect(tmp_path, monkeypatch)
+    snap = engine.snapshot(runner=lambda _n, _a: None)
+    assert DEFAULT_THRESHOLDS["gpu_temp_c"] == 87.0
+    alerts = [a for a in evaluate(snap, {"gpu_temp_c": 87.0}) if a.key == "gpu_temp_c"]
+    assert len(alerts) == 1
+    assert alerts[0].value == 95.0
+    assert alerts[0].severity == "critical"
+
+
+def test_status_gpu_line_shows_sysfs_temperature(tmp_path, monkeypatch) -> None:
+    _hot_gpu_collect(tmp_path, monkeypatch)
+    rep = status.collect(
+        runner=lambda _n, _a: None, l4t_path=str(tmp_path / "no-such-nv_tegra_release")
+    )
+    items = next(s for s in rep["sections"] if s["title"] == "Subsystems")["items"]
+    line = next(i for i in items if i.startswith("gpu:"))
+    assert "95.0 C" in line
+    assert "n/a C" not in line
+
+
 # --- power ------------------------------------------------------------------
 
 

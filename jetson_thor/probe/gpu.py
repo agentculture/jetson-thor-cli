@@ -274,6 +274,22 @@ def _unavailable_reason(devfreq_root: Path, thermal_root: Path) -> str:
     return REASON_FAILED
 
 
+def _smi_shaped(sysfs: dict) -> dict:
+    """The nvidia-smi-keyed view of a sysfs reading, formatted as the smi path is.
+
+    ``monitor``'s gpu_temp rule and ``status``'s gpu line read these keys, so a
+    sysfs-only report must carry them too; ``None`` when unknown (sysfs has no
+    utilization source).
+    """
+    temp, power, clock = sysfs["temperature_c"], sysfs["power_w"], sysfs["clock_mhz"]
+    return {
+        _F_TEMP: f"{temp:.1f}" if temp is not None else None,
+        _F_POWER: f"{power:.2f}" if power is not None else None,
+        _F_CLOCK: f"{clock:.0f}" if clock is not None else None,
+        "utilization.gpu": None,
+    }
+
+
 def _sysfs_report(sysfs: dict) -> dict:
     clock_item = f"clock: {_fmt_num(sysfs['clock_mhz'], ' MHz', 0)}"
     if sysfs["clock_pct_of_max"] is not None:
@@ -288,7 +304,8 @@ def _sysfs_report(sysfs: dict) -> dict:
     warnings = _warn_hot(
         f"{sysfs['temperature_c']}" if sysfs["temperature_c"] is not None else None
     )
-    data = {"gpu": sysfs, "compute_apps": [], "gpu_attributed_mib": 0}
+    # Keep the sysfs-native keys (temperature_c, ...) and add the smi-shaped ones.
+    data = {"gpu": {**sysfs, **_smi_shaped(sysfs)}, "compute_apps": [], "gpu_attributed_mib": 0}
     return report("gpu", source="sysfs", sections=sections, warnings=warnings, data=data)
 
 
