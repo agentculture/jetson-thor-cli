@@ -159,7 +159,7 @@ def init_file(path: Optional[str] = None, *, force: bool = False) -> Path:
             EXIT_USER_ERROR,
             f"monitor config already exists: {cfg_path}",
             remediation=(
-                "edit it in place, or re-run 'jetson-thor-cli monitor config --init --force' "
+                "edit it in place, or re-run 'thor monitor config --init --force' "
                 "to overwrite it with a fresh scaffold (this discards its webhook_url)"
             ),
         )
