@@ -12,11 +12,10 @@ from __future__ import annotations
 _ROOT = """\
 # thor
 
-A clonable template for AgentCulture mesh agents. It carries an agent-first CLI
-(cited from the teken `python-cli` reference), a mesh identity (`culture.yaml` +
-`CLAUDE.md`), the canonical guildmaster skill kit under `.claude/skills/`, and a
-buildable/deployable package baseline. Clone it, rename the package, edit
-`culture.yaml`, and you have a new agent.
+Agent-first CLI for the NVIDIA Jetson Thor device: machine telemetry (`status`,
+`memory`, `gpu`, `disk`, `thermal`, ...), `swap` inspection and planning, and a
+`monitor` webhook watchdog. It also carries a mesh identity (`culture.yaml` +
+`CLAUDE.md`) and the canonical guildmaster skill kit under `.claude/skills/`.
 
 ## Agent verbs
 
@@ -99,7 +98,7 @@ _OVERVIEW = """\
 # thor overview
 
 Read-only descriptive snapshot of the agent: identity (from `culture.yaml`), the
-verb surface, and the sibling-pattern artifacts the template carries. Accepts an
+verb surface, and the sibling-pattern artifacts the agent carries. Accepts an
 ignored `target` so a stray path never hard-fails.
 
 ## Usage

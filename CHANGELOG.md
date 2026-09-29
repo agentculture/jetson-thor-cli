@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/). This project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2026-09-29
+
+### Changed
+
+- Root `thor --help` description and the `explain thor` root text now describe the Jetson Thor device CLI instead of a "clonable template" (device-cli-alignment, part of #48).
+
+### Added
+
+- Test asserting the root description names Jetson Thor.
+- Parity check: `cli/_errors.py`, `cli/_output.py` and `probe/_report.py` diff against dgx-spark-cli 0.7.1 shows only name differences.
+
 ## [0.5.0] - 2026-07-13
 
 ### Added

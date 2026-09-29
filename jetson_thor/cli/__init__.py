@@ -74,7 +74,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     parser = _CliArgumentParser(
         prog="thor",
-        description="thor — a clonable template for AgentCulture mesh agents.",
+        description="thor — agent-first CLI for the NVIDIA Jetson Thor device.",
     )
     parser.add_argument(
         "--version",
