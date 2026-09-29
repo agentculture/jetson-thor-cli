@@ -16,6 +16,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Test asserting the root description names Jetson Thor.
 - Parity check: `cli/_errors.py`, `cli/_output.py` and `probe/_report.py` diff against dgx-spark-cli 0.7.1 shows only name differences.
 
+### Fixed
+
+Review findings on the machine-scope front (device-cli-alignment deviation d1), fixed identically in dgx-spark-cli, jetson-thor-cli and jetson-orin-cli:
+
+- `gpu`: a report built from sysfs (nvidia-smi missing, failing or thin) also carries the nvidia-smi-shaped keys (`temperature.gpu`, `power.draw`, `clocks.sm`, `utilization.gpu`), so the monitor's GPU-temperature alert fires and `status` shows the temperature instead of `n/a`.
+- `swap grow --apply`: a step that fails after `swapoff` now attempts a best-effort `swapon <file>` and reports the outcome; if recovery fails the hint says to run `sudo swapon <file>`.
+- `swap grow` targets the swapfile detected in `/proc/swaps` instead of assuming `/swap.img`.
+- `monitor config --init` refuses to overwrite an existing `monitor.json` (exit 1) unless `--force` is given.
+- `monitor config --init` writes `monitor.json` mode 0600 (atomically) and creates its directory 0700.
+- `monitor`'s `subsystem_down` no longer fires for a subsystem that is not installed (no docker; no nvidia-smi and no GPU sysfs node) or not permitted (not in the docker group); the probes record an `unavailable_reason`.
+- `swap grow`'s fstab ensure matches an existing entry whitespace-insensitively (awk on fields 1 and 3), with the path passed as positional arguments, never spliced into script text.
+- `disk`: `/proc/mounts` octal escapes are decoded at the byte level, so non-ASCII (UTF-8) mount points are no longer dropped.
+- `network`: USB-gadget links (`l4tbr0`, `usb*`, `rndis*`) are classified `usb-gadget` and never counted as reachable.
+
 ## [0.5.0] - 2026-07-13
 
 ### Added
