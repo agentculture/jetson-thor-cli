@@ -304,7 +304,7 @@ availability (nvidia-smi / docker going dark).
 - `monitor once` — one cycle: evaluate, deliver transitions, update state.
 - `monitor run` — foreground watch loop (the systemd ExecStart).
 - `monitor test` — POST a synthetic alert to verify the webhook.
-- `monitor config [--init]` — show resolved config / write a scaffold.
+- `monitor config [--init [--force]]` — show resolved config / write a scaffold.
 - `monitor install | enable | disable | status | uninstall` — systemd `--user`.
 
 ## Config
@@ -382,7 +382,8 @@ _MONITOR_CONFIG = """\
 # thor monitor config
 
 Show the resolved configuration (thresholds, webhook, interval) and whether it
-is valid. `--init` writes a scaffold config file you can edit. `--json`,
+is valid. `--init` writes a scaffold config file you can edit; it refuses
+(exit 1) when the file already exists, unless `--force` is also given. `--json`,
 `--config PATH`. The webhook may also come from `JETSON_THOR_WEBHOOK_URL`.
 `notify_on_start` (default `true`) toggles the startup liveness alert.
 
