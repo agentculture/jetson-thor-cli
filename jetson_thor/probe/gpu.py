@@ -30,11 +30,18 @@ nvidia-smi produced nothing at all).
 from __future__ import annotations
 
 import csv
+import shutil
 from pathlib import Path
 from typing import Optional
 
 from jetson_thor.probe import _run
-from jetson_thor.probe._report import human_bytes, report, unavailable
+from jetson_thor.probe._report import (
+    REASON_FAILED,
+    REASON_NOT_INSTALLED,
+    human_bytes,
+    report,
+    unavailable,
+)
 from jetson_thor.probe._run import Runner, default_runner
 
 _HOT_C = 80.0
@@ -238,6 +245,27 @@ def _sysfs_fallback(devfreq_root: Path, thermal_root: Path, hwmon_root: Path) ->
     }
 
 
+def _sysfs_gpu_nodes_present(devfreq_root: Path, thermal_root: Path, hwmon_root: Path) -> bool:
+    """True when any sysfs node the fallback reads exists, readable or not.
+
+    Separates "no GPU here" (not installed) from "the GPU is there but its
+    nodes yield nothing usable" (a failing probe).
+    """
+    if devfreq_root.is_dir() and any(devfreq_root.glob("*gpu*")):
+        return True
+    if thermal_root.is_dir():
+        for zdir in thermal_root.glob("thermal_zone*"):
+            if "gpu" in (_run.read_first_line(zdir / "type") or "").lower():
+                return True
+    if hwmon_root.is_dir():
+        for hdir in hwmon_root.glob("hwmon*"):
+            labels = [_run.read_first_line(p) for p in hdir.glob("in*_label")]
+            labels.append(_run.read_first_line(hdir / "label"))
+            if _GPU_RAIL_LABEL in labels:
+                return True
+    return False
+
+
 def _sysfs_report(sysfs: dict) -> dict:
     clock_item = f"clock: {_fmt_num(sysfs['clock_mhz'], ' MHz', 0)}"
     if sysfs["clock_pct_of_max"] is not None:
@@ -294,11 +322,15 @@ def collect(
     if out is None:
         sysfs = _sysfs_fallback(Path(devfreq_root), Path(thermal_root), Path(hwmon_root))
         if not any(v is not None for v in sysfs.values()):
+            installed = shutil.which("nvidia-smi") is not None or _sysfs_gpu_nodes_present(
+                Path(devfreq_root), Path(thermal_root), Path(hwmon_root)
+            )
             return unavailable(
                 "gpu",
                 "nvidia-smi, sysfs",
                 "install NVIDIA drivers / run on Jetson Thor "
                 "(with devfreq + hwmon nodes present)",
+                reason=REASON_FAILED if installed else REASON_NOT_INSTALLED,
             )
         return _sysfs_report(sysfs)
 
