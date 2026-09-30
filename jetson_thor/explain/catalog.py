@@ -12,11 +12,10 @@ from __future__ import annotations
 _ROOT = """\
 # thor
 
-A clonable template for AgentCulture mesh agents. It carries an agent-first CLI
-(cited from the teken `python-cli` reference), a mesh identity (`culture.yaml` +
-`CLAUDE.md`), the canonical guildmaster skill kit under `.claude/skills/`, and a
-buildable/deployable package baseline. Clone it, rename the package, edit
-`culture.yaml`, and you have a new agent.
+Agent-first CLI for the NVIDIA Jetson Thor device: machine telemetry (`status`,
+`memory`, `gpu`, `disk`, `thermal`, ...), `swap` inspection and planning, and a
+`monitor` webhook watchdog. It also carries a mesh identity (`culture.yaml` +
+`CLAUDE.md`) and the canonical guildmaster skill kit under `.claude/skills/`.
 
 ## Agent verbs
 
@@ -99,7 +98,7 @@ _OVERVIEW = """\
 # thor overview
 
 Read-only descriptive snapshot of the agent: identity (from `culture.yaml`), the
-verb surface, and the sibling-pattern artifacts the template carries. Accepts an
+verb surface, and the sibling-pattern artifacts the agent carries. Accepts an
 ignored `target` so a stray path never hard-fails.
 
 ## Usage
@@ -240,7 +239,9 @@ _NETWORK = """\
 Interfaces, default route, and reachable addresses, summarized from `ip -br
 addr` and `ip route show default`. Named interfaces (wifi/ethernet/tailscale/
 bridges) are listed with their IPv4; the many container `veth` pairs are rolled
-up to a count. "Reachable" excludes docker bridge gateways and link-local.
+up to a count. "Reachable" excludes docker bridge gateways, link-local, and
+USB-gadget links (`l4tbr0`, `usb*`, `rndis*`, kind `usb-gadget`), which only
+reach a host on the other end of a USB cable.
 
 ## Usage
 
@@ -299,13 +300,19 @@ Watches: memory %, swap %, disk %, hottest sensor, GPU temp, load-per-core,
 I/O contention (iowait + blocked procs), container health, and subsystem
 availability (nvidia-smi / docker going dark).
 
+`subsystem_down` fires (critical) only on a genuine probe failure: the tool is
+installed and usable, yet the probe fails (e.g. the docker daemon is down or
+nvidia-smi errors). A subsystem that is merely **not installed** (no docker) or
+**not permitted** (this user is not in the docker group) is reported as
+`available: false` by `check`, but raises no alert.
+
 ## Verbs
 
 - `monitor check` — evaluate now, print firing alerts (no webhook, no state).
 - `monitor once` — one cycle: evaluate, deliver transitions, update state.
 - `monitor run` — foreground watch loop (the systemd ExecStart).
 - `monitor test` — POST a synthetic alert to verify the webhook.
-- `monitor config [--init]` — show resolved config / write a scaffold.
+- `monitor config [--init [--force]]` — show resolved config / write a scaffold.
 - `monitor install | enable | disable | status | uninstall` — systemd `--user`.
 
 ## Config
@@ -383,7 +390,10 @@ _MONITOR_CONFIG = """\
 # thor monitor config
 
 Show the resolved configuration (thresholds, webhook, interval) and whether it
-is valid. `--init` writes a scaffold config file you can edit. `--json`,
+is valid. `--init` writes a scaffold config file you can edit; it refuses
+(exit 1) when the file already exists, unless `--force` is also given. The
+file is written mode 0600 (and a directory it creates 0700), since the webhook
+URL is often a bearer secret. `--json`,
 `--config PATH`. The webhook may also come from `JETSON_THOR_WEBHOOK_URL`.
 `notify_on_start` (default `true`) toggles the startup liveness alert.
 
@@ -457,9 +467,11 @@ surface in one read, use `thor swap overview` (the superset).
 _SWAP_GROW = """\
 # thor swap grow SIZE
 
-The guarded mutator: resize the file-backed swapfile in place
+The guarded mutator: resize the file-backed swapfile detected in `/proc/swaps`
+(e.g. `/swap.img` or `/swapfile`) in place
 (`swapoff -> fallocate -> chmod -> mkswap -> swapon`, plus an fstab ensure on the
-persistent path). `SIZE` is a **placeholder** — replace it with a human-readable
+persistent path). A host with no file-backed swap is refused (exit 1).
+`SIZE` is a **placeholder** — replace it with a human-readable
 size (`64G`, `32GiB`, `16g`, or a raw byte count; binary 1024-based). Don't type
 the literal word `size`: `swap grow 64G`, not `swap grow size 64G`.
 

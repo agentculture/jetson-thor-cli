@@ -30,11 +30,18 @@ nvidia-smi produced nothing at all).
 from __future__ import annotations
 
 import csv
+import shutil
 from pathlib import Path
 from typing import Optional
 
 from jetson_thor.probe import _run
-from jetson_thor.probe._report import human_bytes, report, unavailable
+from jetson_thor.probe._report import (
+    REASON_FAILED,
+    REASON_NOT_INSTALLED,
+    human_bytes,
+    report,
+    unavailable,
+)
 from jetson_thor.probe._run import Runner, default_runner
 
 _HOT_C = 80.0
@@ -238,6 +245,51 @@ def _sysfs_fallback(devfreq_root: Path, thermal_root: Path, hwmon_root: Path) ->
     }
 
 
+def _sysfs_gpu_nodes_present(devfreq_root: Path, thermal_root: Path) -> bool:
+    """True when a GPU sysfs node exists, readable or not.
+
+    A node exists when ``devfreq_root`` has a ``*gpu*`` entry or any
+    ``thermal_zone*`` type contains "gpu". Separates "no GPU here" (not
+    installed) from "the GPU is there but its nodes yield nothing usable".
+    """
+    if devfreq_root.is_dir() and any(devfreq_root.glob("*gpu*")):
+        return True
+    if thermal_root.is_dir():
+        for zdir in thermal_root.glob("thermal_zone*"):
+            if "gpu" in (_run.read_first_line(zdir / "type") or "").lower():
+                return True
+    return False
+
+
+def _unavailable_reason(devfreq_root: Path, thermal_root: Path) -> str:
+    """Why neither nvidia-smi nor sysfs gave a GPU reading.
+
+    ``not_installed`` only when nvidia-smi is not on PATH *and* no GPU sysfs
+    node exists; otherwise the GPU is there and its probe is failing.
+    """
+    if shutil.which("nvidia-smi") is None and not _sysfs_gpu_nodes_present(
+        devfreq_root, thermal_root
+    ):
+        return REASON_NOT_INSTALLED
+    return REASON_FAILED
+
+
+def _smi_shaped(sysfs: dict) -> dict:
+    """The nvidia-smi-keyed view of a sysfs reading, formatted as the smi path is.
+
+    ``monitor``'s gpu_temp rule and ``status``'s gpu line read these keys, so a
+    sysfs-only report must carry them too; ``None`` when unknown (sysfs has no
+    utilization source).
+    """
+    temp, power, clock = sysfs["temperature_c"], sysfs["power_w"], sysfs["clock_mhz"]
+    return {
+        _F_TEMP: f"{temp:.1f}" if temp is not None else None,
+        _F_POWER: f"{power:.2f}" if power is not None else None,
+        _F_CLOCK: f"{clock:.0f}" if clock is not None else None,
+        "utilization.gpu": None,
+    }
+
+
 def _sysfs_report(sysfs: dict) -> dict:
     clock_item = f"clock: {_fmt_num(sysfs['clock_mhz'], ' MHz', 0)}"
     if sysfs["clock_pct_of_max"] is not None:
@@ -252,7 +304,8 @@ def _sysfs_report(sysfs: dict) -> dict:
     warnings = _warn_hot(
         f"{sysfs['temperature_c']}" if sysfs["temperature_c"] is not None else None
     )
-    data = {"gpu": sysfs, "compute_apps": [], "gpu_attributed_mib": 0}
+    # Keep the sysfs-native keys (temperature_c, ...) and add the smi-shaped ones.
+    data = {"gpu": {**sysfs, **_smi_shaped(sysfs)}, "compute_apps": [], "gpu_attributed_mib": 0}
     return report("gpu", source="sysfs", sections=sections, warnings=warnings, data=data)
 
 
@@ -299,6 +352,7 @@ def collect(
                 "nvidia-smi, sysfs",
                 "install NVIDIA drivers / run on Jetson Thor "
                 "(with devfreq + hwmon nodes present)",
+                reason=_unavailable_reason(Path(devfreq_root), Path(thermal_root)),
             )
         return _sysfs_report(sysfs)
 

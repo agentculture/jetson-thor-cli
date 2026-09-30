@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
 from jetson_thor.probe import (
     _run,
     containers,
@@ -140,6 +142,31 @@ def test_disk_filters_virtual_and_warns_when_full(tmp_path) -> None:
     assert filesystems[0]["mount"] == "/"
     assert filesystems[0]["used_pct"] == 90.0
     assert rep["warnings"]  # 90% >= 85% full
+
+
+def test_disk_decodes_mountpoints_without_mangling_utf8(tmp_path) -> None:
+    mounts = tmp_path / "mounts"
+    mounts.write_bytes(
+        "/dev/sda1 /media/u/Données ext4 rw 0 0\n".encode("utf-8")  # raw UTF-8
+        + b"/dev/sdb1 /media/u/My\\040Disk ext4 rw 0 0\n"  # kernel-escaped space
+        + b"/dev/sdc1 /media/u/Donn\\303\\251es2 ext4 rw 0 0\n"  # escaped UTF-8 bytes
+        + b"/dev/sdd1 /media/u/back\\134slash ext4 rw 0 0\n"  # escaped backslash
+    )
+    seen: list[str] = []
+
+    def _recording_statvfs(path: str):
+        seen.append(path)
+        return _fake_statvfs(path)
+
+    rep = disk.collect(str(mounts), statvfs=_recording_statvfs)
+    expected = [
+        "/media/u/Données",
+        "/media/u/My Disk",
+        "/media/u/Données2",
+        "/media/u/back\\slash",
+    ]
+    assert seen == expected
+    assert [fs["mount"] for fs in rep["data"]["filesystems"]] == expected
 
 
 def test_disk_unavailable_when_missing() -> None:
@@ -275,6 +302,45 @@ def test_gpu_unavailable_without_nvidia_smi(tmp_path) -> None:
     assert rep["remediation"]
 
 
+def _no_sysfs(tmp_path) -> dict:
+    return {
+        "devfreq_root": str(tmp_path / "no-devfreq"),
+        "thermal_root": str(tmp_path / "no-thermal"),
+        "hwmon_root": str(tmp_path / "no-hwmon"),
+    }
+
+
+def test_gpu_unavailable_reason_not_installed(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    # Neither nvidia-smi nor any sysfs GPU node: the GPU is simply not there.
+    monkeypatch.setattr(gpu.shutil, "which", lambda _n: None)
+    rep = gpu.collect(runner=lambda _n, _a: None, **_no_sysfs(tmp_path))
+    assert rep["reason"] == "not_installed"
+
+
+def test_gpu_unavailable_reason_failed_when_tool_present(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    monkeypatch.setattr(gpu.shutil, "which", lambda n: f"/usr/bin/{n}")
+    rep = gpu.collect(runner=lambda _n, _a: None, **_no_sysfs(tmp_path))
+    assert rep["reason"] == "failed"
+
+
+def test_gpu_unavailable_reason_failed_when_sysfs_node_unreadable(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    # No nvidia-smi, but a GPU sysfs node exists and yields nothing usable: the
+    # GPU is there and its probe is failing, so this is not "not installed".
+    monkeypatch.setattr(gpu.shutil, "which", lambda _n: None)
+    zone = tmp_path / "thermal" / "thermal_zone0"
+    zone.mkdir(parents=True)
+    (zone / "type").write_text("gpu-thermal\n")
+    roots = _no_sysfs(tmp_path)
+    roots["thermal_root"] = str(tmp_path / "thermal")
+    rep = gpu.collect(runner=lambda _n, _a: None, **roots)
+    assert rep["available"] is False
+    assert rep["reason"] == "failed"
+
+
 # --- network --------------------------------------------------------------
 
 _ADDR = """\
@@ -308,6 +374,30 @@ def test_network_summarizes_and_excludes_bridge_addrs() -> None:
     assert data["default_routes"][0]["dev"] == "wlP9s9"
 
 
+def test_network_usb_gadget_links_are_not_reachable() -> None:
+    # Jetson's USB device-mode bridge (l4tbr0 at 192.168.55.1) and its usb*/rndis*
+    # members only reach a host plugged into the USB port, not the network.
+    addr = (
+        "lo               UNKNOWN        127.0.0.1/8 ::1/128\n"
+        "eth0             UP             10.0.0.5/24\n"
+        "l4tbr0           UP             192.168.55.1/24\n"
+        "usb0             UP             192.168.55.2/24\n"
+        "rndis0           UP             192.168.56.1/24\n"
+    )
+
+    def _runner(name: str, args) -> str | None:
+        if args and args[0] == "-br":
+            return addr
+        return "default via 10.0.0.1 dev eth0 proto dhcp src 10.0.0.5\n"
+
+    rep = network.collect(runner=_runner)
+    data = rep["data"]
+    assert data["reachable_ipv4"] == ["10.0.0.5"]
+    kinds = {i["name"]: i["kind"] for i in data["interfaces"]}
+    assert kinds["l4tbr0"] == kinds["usb0"] == kinds["rndis0"] == "usb-gadget"
+    assert data["bridge_count"] == 0  # l4tbr0 is not a docker bridge
+
+
 def test_network_unavailable_without_ip() -> None:
     rep = network.collect(runner=lambda _n, _a: None)
     assert rep["available"] is False
@@ -336,6 +426,34 @@ def test_containers_flags_unhealthy_and_gpu() -> None:
 def test_containers_unavailable_without_docker() -> None:
     rep = containers.collect(runner=lambda _n, _a: None)
     assert rep["available"] is False
+
+
+def test_containers_unavailable_reason_not_installed(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(containers.shutil, "which", lambda _n: None)
+    rep = containers.collect(runner=lambda _n, _a: None)
+    assert rep["available"] is False
+    assert rep["reason"] == "not_installed"
+
+
+def test_containers_unavailable_reason_not_permitted(monkeypatch: pytest.MonkeyPatch) -> None:
+    # docker is installed and its socket exists, but this user may not use it
+    # (not in the docker group).
+    monkeypatch.delenv("DOCKER_HOST", raising=False)
+    monkeypatch.setattr(containers.shutil, "which", lambda n: f"/usr/bin/{n}")
+    monkeypatch.setattr(containers.os.path, "exists", lambda _p: True)
+    monkeypatch.setattr(containers.os, "access", lambda _p, _m: False)
+    rep = containers.collect(runner=lambda _n, _a: None)
+    assert rep["reason"] == "not_permitted"
+
+
+def test_containers_unavailable_reason_failed(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Installed and permitted, yet `docker ps` fails: a genuine probe failure.
+    monkeypatch.delenv("DOCKER_HOST", raising=False)
+    monkeypatch.setattr(containers.shutil, "which", lambda n: f"/usr/bin/{n}")
+    monkeypatch.setattr(containers.os.path, "exists", lambda _p: True)
+    monkeypatch.setattr(containers.os, "access", lambda _p, _m: True)
+    rep = containers.collect(runner=lambda _n, _a: None)
+    assert rep["reason"] == "failed"
 
 
 # --- status (aggregator) --------------------------------------------------
