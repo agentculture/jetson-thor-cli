@@ -60,6 +60,14 @@ Swap management
   thor swap sample         Take one snapshot for the history store.
 grow is dry-run by default; --apply requires root. Sizes are 32G/32GiB/bytes.
 
+Benchmark window and page cache (machine-CLI contract)
+-------------------------------------------------------
+  thor window show|store|lock|restore  Lock clocks + fan for a benchmark,
+                           then restore the stored state (--json: one object).
+  thor drop-caches         sync + vm.drop_caches=3 via the sudo grant.
+  thor grant-permissions   Install passwordless rules (--check only reports).
+Mutators use sudo -n and never prompt; exit 0 done, 1 refused, 2 environment.
+
 Monitoring (AI-free background watchdog)
 ------------------------------------------
   thor monitor check      Evaluate thresholds now (no webhook).
@@ -120,6 +128,9 @@ def _as_json_payload() -> dict[str, object]:
             {"path": ["swap", "grow"], "summary": "Resize the swapfile (dry-run default)."},
             {"path": ["swap", "history"], "summary": "Top per-process swap/RSS consumers."},
             {"path": ["swap", "sample"], "summary": "Snapshot for the history store."},
+            {"path": ["window"], "summary": "Benchmark window: show/store/lock/restore."},
+            {"path": ["drop-caches"], "summary": "Clear the page cache via the sudo grant."},
+            {"path": ["grant-permissions"], "summary": "Install/check passwordless sudo rules."},
             {"path": ["monitor", "check"], "summary": "Evaluate alert thresholds now."},
             {"path": ["monitor", "once"], "summary": "One monitor cycle + webhook delivery."},
             {"path": ["monitor", "run"], "summary": "Foreground watchdog loop."},

@@ -71,6 +71,7 @@ def _build_parser() -> argparse.ArgumentParser:
     from jetson_thor.cli._commands import overview as _overview_cmd
     from jetson_thor.cli._commands import swap as _swap_group
     from jetson_thor.cli._commands import whoami as _whoami_cmd
+    from jetson_thor.cli._commands import window as _window_group
 
     parser = _CliArgumentParser(
         prog="thor",
@@ -94,6 +95,7 @@ def _build_parser() -> argparse.ArgumentParser:
     _machine_group.register(sub)
     _monitor_group.register(sub)
     _swap_group.register(sub)
+    _window_group.register(sub)
     # Register your own noun groups here:
     #   from jetson_thor.cli._commands import my_noun as _my_noun_group
     #   _my_noun_group.register(sub)
