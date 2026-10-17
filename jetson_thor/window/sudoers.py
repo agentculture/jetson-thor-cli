@@ -1,7 +1,7 @@
 """Passwordless-sudo grant: detection (``sudo -n -l``) and install.
 
 Cited from mjolnir ``cachectl.py`` (cite, don't import), extended with the
-``tee`` form, the ``NOPASSWD: ALL`` pass-through and the window rules.
+``tee`` form, the full ``NOPASSWD ALL`` pass-through and the window rules.
 Detection is read-only and never prompts. An existing equivalent rule (for
 example the Thor's ``/usr/sbin/sysctl -w vm.drop_caches\\=3``) is reused and
 nothing is installed for it. Full sudo is never installed.

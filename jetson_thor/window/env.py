@@ -32,9 +32,18 @@ def default_exec(argv: Sequence[str], stdin: Optional[str] = None) -> Optional[t
     return proc.returncode, proc.stdout, proc.stderr
 
 
+def _fallback_state_dir() -> Path:
+    return Path(os.path.realpath(Path.home() / ".local" / "state" / "thor"))
+
+
 def default_state_dir() -> Path:
-    base = os.environ.get("XDG_STATE_HOME") or str(Path.home() / ".local" / "state")
-    return Path(base) / "thor"
+    """``$XDG_STATE_HOME/thor`` when it is an absolute path with no ``..``
+    components (the XDG spec says relative values are invalid); otherwise
+    ``~/.local/state/thor``. The result is always a resolved (realpath) path."""
+    raw = os.environ.get("XDG_STATE_HOME") or ""
+    if not raw or not os.path.isabs(raw) or ".." in raw.split(os.sep):
+        return _fallback_state_dir()
+    return Path(os.path.realpath(os.path.join(raw, "thor")))
 
 
 @dataclass

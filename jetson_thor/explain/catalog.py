@@ -452,7 +452,7 @@ _DROP_CACHES = """\
 
 `sync`, then clear the page cache (`vm.drop_caches=3`) through the passwordless
 rule `thor grant-permissions` reuses or installs (`sysctl` form, `tee` form, or
-`NOPASSWD: ALL`). No grant: exit 2, `not_granted`; it never prompts.
+a full NOPASSWD grant). No grant: exit 2, `not_granted`; it never prompts.
 
     thor drop-caches --json   # {"ok": true, "reason": null, "cleared": true, "rule": "sysctl"}
 """

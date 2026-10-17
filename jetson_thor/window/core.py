@@ -18,6 +18,7 @@ stored file carries the fan PWM state. ``fan_profile`` is read from
 from __future__ import annotations
 
 import json
+import os
 import re
 import time
 from pathlib import Path
@@ -28,17 +29,35 @@ from jetson_thor.window import sudoers
 from jetson_thor.window.env import Env
 
 _FAN_CONF_RE = re.compile(r"^\s*FAN_DEFAULT_PROFILE\s+(\S+)", re.MULTILINE)
-_EMC_RE = re.compile(r"^EMC\s+.*?CurrentFreq=(?P<cur>\d+)", re.MULTILINE)
+_CURFREQ_RE = re.compile(r"CurrentFreq=(\d+)")
 _PWM_RE = re.compile(r"hwmon\d+_pwm1=(?P<pwm>\d+)")
 GPU_DEVFREQ = "gpu-gpc-0"
 
 
+_CLOCKS_STATE_NAME = "jetson_clocks.state"
+_WINDOW_NAME = "window.json"
+
+
+def _state_file(env: Env, name: str) -> Path:
+    """Sanitised state path: realpath the state dir, join a constant file name
+    and verify containment. Every state read/write/delete and every path handed
+    to ``jetson_clocks`` or written into a sudoers rule goes through here."""
+    base = os.path.realpath(env.state_dir)
+    if not os.path.isabs(base) or os.sep in name:
+        raise ValueError("invalid state location")
+    full = os.path.realpath(os.path.join(base, name))
+    if os.path.commonpath([base, full]) != base:
+        raise ValueError("state path escapes the state directory")
+    return Path(full)
+
+
 def state_paths(env: Env) -> tuple:
-    return env.state_dir / "jetson_clocks.state", env.state_dir / "jetson_clocks.state"
+    path = _state_file(env, _CLOCKS_STATE_NAME)
+    return path, path
 
 
 def _window_file(env: Env) -> Path:
-    return env.state_dir / "window.json"
+    return _state_file(env, _WINDOW_NAME)
 
 
 def _read_state(env: Env) -> Optional[dict]:
@@ -50,8 +69,9 @@ def _read_state(env: Env) -> Optional[dict]:
 
 
 def _write_state(env: Env, data: dict) -> None:
-    env.state_dir.mkdir(parents=True, exist_ok=True)
-    _window_file(env).write_text(json.dumps(data))
+    path = _window_file(env)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data))
 
 
 def _sudo(env: Env, argv: list) -> list:
@@ -106,8 +126,11 @@ def _privileged_show(env: Env) -> Optional[str]:
 
 
 def _emc_mhz(raw: Optional[str]) -> Optional[int]:
-    m = _EMC_RE.search(raw or "")
-    return int(m["cur"]) // 10**6 if m else None
+    for line in (raw or "").splitlines():
+        if line.startswith("EMC") and "CurrentFreq=" in line:
+            m = _CURFREQ_RE.search(line)
+            return int(m.group(1)) // 10**6 if m else None
+    return None
 
 
 def _fan_max(raw: Optional[str]) -> Optional[bool]:
@@ -194,7 +217,7 @@ def store(env: Env) -> dict:
         return {**missing, "action": "store"}
     clocks = env.which("jetson_clocks")
     path, _ = state_paths(env)
-    env.state_dir.mkdir(parents=True, exist_ok=True)
+    path.parent.mkdir(parents=True, exist_ok=True)
     _, fail = _priv(env, [clocks, "--store", str(path)])
     if fail:
         return {**fail, "action": "store"}

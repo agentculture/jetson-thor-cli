@@ -148,8 +148,12 @@ def js(capsys, *argv):
 
 def test_show_idle(host, capsys):
     rc, obj = js(capsys, "window", "show")
-    assert rc == 0 and obj["ok"] is True and obj["reason"] is None
-    assert obj["active"] is False and obj["stored"] is False and obj["supported"] is True
+    assert rc == 0
+    assert obj["ok"] is True
+    assert obj["reason"] is None
+    assert obj["active"] is False
+    assert obj["stored"] is False
+    assert obj["supported"] is True
     assert obj["power_mode"] == "MAXN"
     assert obj["fan_profile"] == "cool"  # FAN_DEFAULT_PROFILE from the conf
     assert obj["clocks"] == {
@@ -160,13 +164,15 @@ def test_show_idle(host, capsys):
     }
     assert obj["clocks_locked"] is False  # min 314 != max 1575
     assert obj["detail"]["fan_max"] is False  # pwm 69
-    assert not host.ran("--store") and not host.ran("--restore")
+    assert not host.ran("--store")
+    assert not host.ran("--restore")
 
 
 def test_show_clocks_come_from_sysfs_without_root(host, capsys):
     host.show_ok = False  # sudo -n would prompt: only emc is lost
     _, obj = js(capsys, "window", "show")
-    assert obj["clocks"]["gpu_mhz"] == 1575 and obj["clocks"]["gpu_min_mhz"] == 314
+    assert obj["clocks"]["gpu_mhz"] == 1575
+    assert obj["clocks"]["gpu_min_mhz"] == 314
     assert obj["clocks"]["emc_mhz"] is None
     assert obj["detail"]["fan_max"] is None
 
@@ -188,14 +194,16 @@ def test_clocks_locked_null_when_unreadable(host, capsys):
     (host.devfreq / "gpu-gpc-0" / "min_freq").unlink()
     _, obj = js(capsys, "window", "show")
     assert obj["clocks_locked"] is None
-    assert obj["clocks"]["gpu_min_mhz"] is None and obj["clocks"]["gpu_mhz"] == 1575
+    assert obj["clocks"]["gpu_min_mhz"] is None
+    assert obj["clocks"]["gpu_mhz"] == 1575
 
 
 def test_clocks_all_null_without_devfreq(host, capsys):
     host.env.devfreq_root = str(host.devfreq / "missing")
     _, obj = js(capsys, "window", "show")
     assert obj["clocks_locked"] is None
-    assert obj["clocks"]["gpu_mhz"] is None and obj["clocks"]["gpu_max_mhz"] is None
+    assert obj["clocks"]["gpu_mhz"] is None
+    assert obj["clocks"]["gpu_max_mhz"] is None
 
 
 def test_fan_profile_null_when_conf_unreadable(host, capsys):
@@ -212,12 +220,16 @@ def test_fan_profile_null_when_conf_has_no_default(host, capsys):
 
 def test_window_bare_noun_is_show(host, capsys):
     rc, obj = js(capsys, "window")
-    assert rc == 0 and "active" in obj
+    assert rc == 0
+    assert "active" in obj
 
 
 def test_full_cycle_store_lock_restore(host, capsys):
     rc, obj = js(capsys, "window", "store")
-    assert rc == 0 and obj["action"] == "store" and obj["stored"] is True and obj["active"] is False
+    assert rc == 0
+    assert obj["action"] == "store"
+    assert obj["stored"] is True
+    assert obj["active"] is False
     store_calls = host.ran("--store")
     assert len(store_calls) == 1
     assert store_calls[0][:3] == ["sudo", "-n", "/usr/bin/jetson_clocks"]
@@ -227,16 +239,22 @@ def test_full_cycle_store_lock_restore(host, capsys):
     )
 
     rc, obj = js(capsys, "window", "lock")
-    assert rc == 0 and obj["action"] == "lock" and obj["active"] is True
+    assert rc == 0
+    assert obj["action"] == "lock"
+    assert obj["active"] is True
     assert obj["clocks_locked"] is True
     argvs = [c for c, _ in host.calls]
     assert argvs.index(["sudo", "-n", "/usr/bin/jetson_clocks"]) < argvs.index(
         ["sudo", "-n", "/usr/bin/jetson_clocks", "--fan"]
     )
-    assert not host.ran("nvfancontrol") and "fan_error" not in obj["detail"]
+    assert not host.ran("nvfancontrol")
+    assert "fan_error" not in obj["detail"]
 
     rc, obj = js(capsys, "window", "restore")
-    assert rc == 0 and obj["restored"] is True and obj["active"] is False and obj["stored"] is False
+    assert rc == 0
+    assert obj["restored"] is True
+    assert obj["active"] is False
+    assert obj["stored"] is False
     assert obj["clocks_locked"] is False  # stock min/max back
     restores = host.ran("--restore")
     assert len(restores) == 1
@@ -251,19 +269,23 @@ def test_store_refused_while_locked(host, capsys):
     js(capsys, "window", "lock")
     host.calls.clear()
     rc, obj = js(capsys, "window", "store")
-    assert rc == 1 and obj["ok"] is False and obj["reason"] == "window_active"
+    assert rc == 1
+    assert obj["ok"] is False
+    assert obj["reason"] == "window_active"
     assert not host.ran("--store")  # the stock state is not overwritten
 
 
 def test_store_twice_unlocked_is_allowed(host, capsys):
     js(capsys, "window", "store")
     rc, obj = js(capsys, "window", "store")
-    assert rc == 0 and obj["ok"] is True
+    assert rc == 0
+    assert obj["ok"] is True
 
 
 def test_lock_without_store(host, capsys):
     rc, obj = js(capsys, "window", "lock")
-    assert rc == 1 and obj["reason"] == "no_stored_state"
+    assert rc == 1
+    assert obj["reason"] == "no_stored_state"
     assert host.calls == []
 
 
@@ -272,7 +294,8 @@ def test_lock_is_idempotent(host, capsys):
     js(capsys, "window", "lock")
     host.calls.clear()
     rc, obj = js(capsys, "window", "lock")
-    assert rc == 0 and obj["active"] is True
+    assert rc == 0
+    assert obj["active"] is True
     assert not [
         c for c in host.ran_prefix("sudo", "-n", "/usr/bin/jetson_clocks") if "--show" not in c
     ]
@@ -280,30 +303,37 @@ def test_lock_is_idempotent(host, capsys):
 
 def test_restore_without_state_is_ok(host, capsys):
     rc, obj = js(capsys, "window", "restore")
-    assert rc == 0 and obj["ok"] is True and obj["restored"] is False
+    assert rc == 0
+    assert obj["ok"] is True
+    assert obj["restored"] is False
     assert not host.ran("--restore")
 
 
 def test_not_granted_is_exit_2(host, capsys):
     host.fail["--store"] = (1, "", "sudo: a password is required")
     rc, obj = js(capsys, "window", "store")
-    assert rc == 2 and obj["reason"] == "not_granted"
+    assert rc == 2
+    assert obj["reason"] == "not_granted"
     assert not list(host.env.state_dir.iterdir())  # no half-written window state
 
 
 def test_privileged_failure_is_failed(host, capsys):
     host.fail["--store"] = (1, "", "jetson_clocks: boom")
     rc, obj = js(capsys, "window", "store")
-    assert rc == 2 and obj["reason"] == "failed" and "boom" in obj["message"]
+    assert rc == 2
+    assert obj["reason"] == "failed"
+    assert "boom" in obj["message"]
 
 
 def test_tool_missing(tmp_path, monkeypatch, capsys):
     h = FakeHost(tmp_path, tools=())
     monkeypatch.setattr(window_cmd, "_env", lambda: h.env)
     rc, obj = js(capsys, "window", "store")
-    assert rc == 2 and obj["reason"] == "tool_missing"
+    assert rc == 2
+    assert obj["reason"] == "tool_missing"
     _, show = js(capsys, "window", "show")
-    assert show["supported"] is False and show["clocks"]["emc_mhz"] is None
+    assert show["supported"] is False
+    assert show["clocks"]["emc_mhz"] is None
 
 
 def test_restore_failure_keeps_state(host, capsys):
@@ -311,7 +341,8 @@ def test_restore_failure_keeps_state(host, capsys):
     js(capsys, "window", "lock")
     host.fail["--restore"] = (1, "", "boom")
     rc, obj = js(capsys, "window", "restore")
-    assert rc == 2 and obj["reason"] == "failed"
+    assert rc == 2
+    assert obj["reason"] == "failed"
     assert (host.env.state_dir / "window.json").exists()  # still restorable
 
 
@@ -319,7 +350,8 @@ def test_fan_failure_does_not_fail_the_window(host, capsys):
     js(capsys, "window", "store")
     host.fail["--fan"] = (1, "", "jetson_clocks: fan boom")
     rc, obj = js(capsys, "window", "lock")
-    assert rc == 0 and obj["active"] is True
+    assert rc == 0
+    assert obj["active"] is True
     assert "boom" in obj["detail"]["fan_error"]
 
 
@@ -333,12 +365,16 @@ def test_root_runs_without_sudo(tmp_path, monkeypatch, capsys):
 
 def test_text_refusal_has_hint(host, capsys):
     rc, out, err = run(capsys, "window", "lock")
-    assert rc == 1 and out == "" and "no_stored_state" in err and "hint:" in err
+    assert rc == 1
+    assert out == ""
+    assert "no_stored_state" in err
+    assert "hint:" in err
 
 
 def test_text_success(host, capsys):
     rc, out, _ = run(capsys, "window", "show")
-    assert rc == 0 and out.startswith("#")
+    assert rc == 0
+    assert out.startswith("#")
 
 
 # ---- drop-caches ------------------------------------------------------------
@@ -346,7 +382,8 @@ def test_text_success(host, capsys):
 
 def test_drop_caches_sysctl_rule(host, capsys):
     rc, obj = js(capsys, "drop-caches")
-    assert rc == 0 and obj == {"ok": True, "reason": None, "cleared": True, "rule": "sysctl"}
+    assert rc == 0
+    assert obj == {"ok": True, "reason": None, "cleared": True, "rule": "sysctl"}
     argvs = [c for c, _ in host.calls]
     assert argvs.index(["sync"]) < argvs.index(
         ["sudo", "-n", "/usr/sbin/sysctl", "-w", "vm.drop_caches=3"]
@@ -357,7 +394,8 @@ def test_drop_caches_tee_rule(tmp_path, monkeypatch, capsys):
     h = FakeHost(tmp_path, listing=TEE_ONLY)
     monkeypatch.setattr(window_cmd, "_env", lambda: h.env)
     rc, obj = js(capsys, "drop-caches")
-    assert rc == 0 and obj["rule"] == "tee"
+    assert rc == 0
+    assert obj["rule"] == "tee"
     assert (["sudo", "-n", "tee", "/proc/sys/vm/drop_caches"], "3") in h.calls
 
 
@@ -365,28 +403,35 @@ def test_drop_caches_all_rule(tmp_path, monkeypatch, capsys):
     h = FakeHost(tmp_path, listing="    (ALL) NOPASSWD: ALL\n")
     monkeypatch.setattr(window_cmd, "_env", lambda: h.env)
     _, obj = js(capsys, "drop-caches")
-    assert obj["rule"] == "all" and obj["cleared"] is True
+    assert obj["rule"] == "all"
+    assert obj["cleared"] is True
 
 
 def test_drop_caches_not_granted(tmp_path, monkeypatch, capsys):
     h = FakeHost(tmp_path, listing=NO_GRANT)
     monkeypatch.setattr(window_cmd, "_env", lambda: h.env)
     rc, obj = js(capsys, "drop-caches")
-    assert rc == 2 and obj["reason"] == "not_granted" and obj["cleared"] is False
-    assert not h.ran_prefix("sync") and not h.ran("drop_caches")
+    assert rc == 2
+    assert obj["reason"] == "not_granted"
+    assert obj["cleared"] is False
+    assert not h.ran_prefix("sync")
+    assert not h.ran("drop_caches")
 
 
 def test_drop_caches_sudo_would_prompt(tmp_path, monkeypatch, capsys):
     h = FakeHost(tmp_path, listing=None)
     monkeypatch.setattr(window_cmd, "_env", lambda: h.env)
     rc, obj = js(capsys, "drop-caches")
-    assert rc == 2 and obj["reason"] == "not_granted"
+    assert rc == 2
+    assert obj["reason"] == "not_granted"
 
 
 def test_drop_caches_failure(host, capsys):
     host.fail["vm.drop_caches=3"] = (1, "", "read-only")
     rc, obj = js(capsys, "drop-caches")
-    assert rc == 2 and obj["reason"] == "failed" and obj["cleared"] is False
+    assert rc == 2
+    assert obj["reason"] == "failed"
+    assert obj["cleared"] is False
 
 
 # ---- grant-permissions ------------------------------------------------------
@@ -394,22 +439,27 @@ def test_drop_caches_failure(host, capsys):
 
 def test_check_real_thor_listing_sysctl_is_equivalent(host, capsys):
     rc, obj = js(capsys, "grant-permissions", "--check")
-    assert rc == 0 and obj["ok"] is True
+    assert rc == 0
+    assert obj["ok"] is True
     assert obj["drop_caches"] == {"granted": True, "rule": "sysctl", "source": "sudo -n -l"}
     assert obj["window"] == {"granted": True, "rule": "all"}
 
 
 def test_grant_reuses_existing_rule_installs_nothing(host, capsys):
     rc, obj = js(capsys, "grant-permissions", "--yes")
-    assert rc == 0 and obj["ok"] is True and obj["installed"] is False
-    assert not host.ran_prefix("visudo") and not host.ran_prefix("sudo", "install")
+    assert rc == 0
+    assert obj["ok"] is True
+    assert obj["installed"] is False
+    assert not host.ran_prefix("visudo")
+    assert not host.ran_prefix("sudo", "install")
 
 
 def test_check_sysctl_only_window_missing(tmp_path, monkeypatch, capsys):
     h = FakeHost(tmp_path, listing=SYSCTL_ONLY)
     monkeypatch.setattr(window_cmd, "_env", lambda: h.env)
     rc, obj = js(capsys, "grant-permissions", "--check")
-    assert rc == 0 and obj["ok"] is True
+    assert rc == 0
+    assert obj["ok"] is True
     assert obj["window"] == {"granted": False, "rule": None}
     assert not h.ran_prefix("visudo")
 
@@ -418,7 +468,9 @@ def test_check_nothing_granted(tmp_path, monkeypatch, capsys):
     h = FakeHost(tmp_path, listing=NO_GRANT)
     monkeypatch.setattr(window_cmd, "_env", lambda: h.env)
     rc, obj = js(capsys, "grant-permissions", "--check")
-    assert rc == 2 and obj["ok"] is False and obj["reason"] == "not_granted"
+    assert rc == 2
+    assert obj["ok"] is False
+    assert obj["reason"] == "not_granted"
     assert not h.ran_prefix("sudo", "install")
 
 
@@ -426,12 +478,14 @@ def test_install_window_only_when_sysctl_present(tmp_path, monkeypatch, capsys):
     h = FakeHost(tmp_path, listing=SYSCTL_ONLY)
     monkeypatch.setattr(window_cmd, "_env", lambda: h.env)
     rc, obj = js(capsys, "grant-permissions", "--yes")
-    assert rc == 0 and obj["installed"] is True
+    assert rc == 0
+    assert obj["installed"] is True
     rules = h.sudoers_written[0]
     assert "vm.drop_caches" not in rules  # not duplicated
     assert "NOPASSWD: ALL" not in rules  # never full sudo
     assert "thor ALL=(ALL) NOPASSWD: /usr/bin/jetson_clocks --store" in rules
-    assert "--restore" in rules and "/usr/bin/jetson_clocks --fan" in rules
+    assert "--restore" in rules
+    assert "/usr/bin/jetson_clocks --fan" in rules
     assert "nvfancontrol" not in rules
     assert rules.count("\n") == len(obj["rules"])  # one rule per command
     visudo = h.ran_prefix("visudo")[0]
@@ -459,8 +513,10 @@ def test_install_declined(tmp_path, monkeypatch, capsys):
     h.answers = ["n"]
     monkeypatch.setattr(window_cmd, "_env", lambda: h.env)
     rc, obj = js(capsys, "grant-permissions")
-    assert rc == 1 and obj["reason"] == "declined"
-    assert not h.ran_prefix("visudo") and not h.ran_prefix("sudo", "install")
+    assert rc == 1
+    assert obj["reason"] == "declined"
+    assert not h.ran_prefix("visudo")
+    assert not h.ran_prefix("sudo", "install")
 
 
 def test_install_no_tty_counts_as_declined(tmp_path, monkeypatch, capsys):
@@ -468,7 +524,8 @@ def test_install_no_tty_counts_as_declined(tmp_path, monkeypatch, capsys):
     h.answers = []
     monkeypatch.setattr(window_cmd, "_env", lambda: h.env)
     rc, obj = js(capsys, "grant-permissions")
-    assert rc == 1 and obj["reason"] == "declined"
+    assert rc == 1
+    assert obj["reason"] == "declined"
 
 
 def test_visudo_rejection_installs_nothing(tmp_path, monkeypatch, capsys):
@@ -476,7 +533,8 @@ def test_visudo_rejection_installs_nothing(tmp_path, monkeypatch, capsys):
     h.fail["visudo"] = (1, "", "syntax error")
     monkeypatch.setattr(window_cmd, "_env", lambda: h.env)
     rc, obj = js(capsys, "grant-permissions", "--yes")
-    assert rc == 2 and obj["reason"] == "failed"
+    assert rc == 2
+    assert obj["reason"] == "failed"
     assert not h.ran_prefix("sudo", "install")
 
 
@@ -485,7 +543,8 @@ def test_install_failure(tmp_path, monkeypatch, capsys):
     h.fail["sudo install"] = (1, "", "denied")
     monkeypatch.setattr(window_cmd, "_env", lambda: h.env)
     rc, obj = js(capsys, "grant-permissions", "--yes")
-    assert rc == 2 and obj["reason"] == "failed"
+    assert rc == 2
+    assert obj["reason"] == "failed"
 
 
 def test_temp_rule_file_is_removed(tmp_path, monkeypatch, capsys):
@@ -508,3 +567,29 @@ def test_window_sudoers_rule_list(host):
         "/usr/bin/jetson_clocks --show",
     ]
     assert not any("nvfancontrol" in c for c in cmds)
+
+
+# ---- state-dir sanitising -----------------------------------------------------
+
+
+def test_state_dir_rejects_relative_and_dotdot_xdg(monkeypatch):
+    from jetson_thor.window import env as wenv
+
+    fallback = wenv._fallback_state_dir()
+    for bad in ("relative/dir", "/tmp/../etc", "../x"):
+        monkeypatch.setenv("XDG_STATE_HOME", bad)
+        assert wenv.default_state_dir() == fallback
+
+
+def test_state_dir_accepts_absolute_xdg(monkeypatch, tmp_path):
+    from jetson_thor.window import env as wenv
+
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
+    assert wenv.default_state_dir() == tmp_path.resolve() / "thor"
+
+
+def test_state_file_rejects_separator_in_name(host):
+    from jetson_thor.window import core
+
+    with pytest.raises(ValueError):
+        core._state_file(host.env, "../escape")
