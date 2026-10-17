@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/). This project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-10-17
+
+### Added
+
+- `thor window show|store|lock|restore`: jetson_clocks --store/--restore plus an nvfancontrol profile (max during the window, stored profile restored); state under $XDG_STATE_HOME/thor
+- `thor drop-caches`: sync then vm.drop_caches=3 via the sudo grant (sysctl, tee or NOPASSWD ALL form)
+- `thor grant-permissions [--check] [--yes]`: detect via sudo -n -l, reuse an existing equivalent rule, else install /etc/sudoers.d/thor-lobes (temp file, visudo -cf, one sudo install)
+- Machine-CLI contract (lobes docs/contracts/machine-cli-window.md): --json single object with ok/reason, exit 0/1/2
+- Tests with a fake host (no real sudo/jetson_clocks/nvfancontrol), including the real Thor sudo -l listing as a fixture
+
 ## [0.5.1] - 2026-09-29
 
 ### Changed

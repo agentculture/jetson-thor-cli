@@ -425,6 +425,51 @@ All `systemctl`/`loginctl` calls degrade gracefully when systemd is absent.
 """
 
 
+_WINDOW = """\
+# thor window
+
+Benchmark window for the Jetson Thor: `store` saves the stock clock state
+(`jetson_clocks --store`) and the nvfancontrol profile, `lock` pins clocks and
+the fan to max, `restore` returns to the stored state and deletes it, `show`
+reports state (no root). State lives in `${XDG_STATE_HOME:-~/.local/state}/thor/`.
+
+    thor window show --json
+    thor window store --json
+    thor window lock --json
+    thor window restore --json
+
+`store` while locked refuses (`window_active`, exit 1); `lock` without a stored
+state refuses (`no_stored_state`, exit 1); `restore` with nothing stored is ok
+with `restored: false`. Privileged steps use `sudo -n`: a missing rule is exit 2
+`not_granted` (run `thor grant-permissions`). Never persists across a reboot.
+The fan set step is UNVALIDATED on a real Thor; a failure is reported under
+`detail.fan_error` and does not fail the clock window.
+"""
+
+_DROP_CACHES = """\
+# thor drop-caches
+
+`sync`, then clear the page cache (`vm.drop_caches=3`) through the passwordless
+rule `thor grant-permissions` reuses or installs (`sysctl` form, `tee` form, or
+`NOPASSWD: ALL`). No grant: exit 2, `not_granted`; it never prompts.
+
+    thor drop-caches --json   # {"ok": true, "reason": null, "cleared": true, "rule": "sysctl"}
+"""
+
+_GRANT = """\
+# thor grant-permissions
+
+Detect (`sudo -n -l`, read-only) and, only when absent, install the single
+passwordless rules: drop-caches plus the window commands, as the 0440 drop-in
+`/etc/sudoers.d/thor-lobes` (temp file, `visudo -cf`, one `sudo install`). An
+equivalent existing rule is reused, never duplicated. Never full sudo.
+
+    thor grant-permissions --check --json
+    thor grant-permissions --yes
+
+Without `--yes` it asks once; declining is exit 1 `declined`.
+"""
+
 _SWAP = """\
 # thor swap
 
@@ -569,6 +614,13 @@ ENTRIES: dict[tuple[str, ...], str] = {
     ("monitor", "status"): _MONITOR_SYSTEMD,
     ("monitor", "uninstall"): _MONITOR_SYSTEMD,
     ("swap",): _SWAP,
+    ("window",): _WINDOW,
+    ("window", "show"): _WINDOW,
+    ("window", "store"): _WINDOW,
+    ("window", "lock"): _WINDOW,
+    ("window", "restore"): _WINDOW,
+    ("drop-caches",): _DROP_CACHES,
+    ("grant-permissions",): _GRANT,
     ("swap", "overview"): _SWAP_OVERVIEW,
     ("swap", "status"): _SWAP_STATUS,
     ("swap", "grow"): _SWAP_GROW,

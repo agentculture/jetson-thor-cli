@@ -34,6 +34,8 @@ _VERBS = [
     "thermal, containers, network, processes, power)",
     "swap — swap inspection, per-process history, and the guarded grow "
     "(overview/status/grow/history/sample)",
+    "window — benchmark window (store/lock/restore/show); also drop-caches, "
+    "grant-permissions (passwordless sudo grant)",
     "monitor — AI-free threshold watchdog that webhooks on catastrophes "
     "(check/once/run/test/config + systemd)",
 ]
