@@ -51,3 +51,5 @@ class Env:
     mkstemp_dir: Optional[str] = None
     thermal_root: str = "/sys/class/thermal"
     hwmon_root: str = "/sys/class/hwmon"
+    devfreq_root: str = "/sys/class/devfreq"
+    fan_conf: str = "/etc/nvfancontrol.conf"

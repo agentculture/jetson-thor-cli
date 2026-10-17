@@ -58,14 +58,13 @@ def drop_caches_rule(listing: Optional[str]) -> Optional[str]:
 def window_commands(env: Env, state_paths: tuple) -> list[str]:
     """The exact sudoers command specs the window verbs need (printed before install)."""
     clocks = env.which("jetson_clocks") or "/usr/bin/jetson_clocks"
-    fan = env.which("nvfancontrol") or "/usr/sbin/nvfancontrol"
     store, restore = state_paths
     return [
         clocks,
         f"{clocks} --store {store}",
         f"{clocks} --restore {restore}",
-        f"{fan} -q",
-        f"{fan} -p *",
+        f"{clocks} --fan",
+        f"{clocks} --show",
     ]
 
 

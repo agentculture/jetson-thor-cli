@@ -20,7 +20,7 @@ _HINTS = {
     "not_granted": "run 'thor grant-permissions' once (one sudo prompt)",
     "no_stored_state": "run 'thor window store' first",
     "window_active": "run 'thor window restore' first",
-    "tool_missing": "run on a Jetson with jetson_clocks / nvfancontrol installed",
+    "tool_missing": "run on a Jetson with jetson_clocks installed",
     "declined": "re-run with --yes to install without the prompt",
     "failed": "see the message above; nothing was left half-applied in the CLI state",
     "unsupported": "this card cannot do it",

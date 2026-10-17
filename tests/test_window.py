@@ -1,7 +1,7 @@
 """Tests for ``thor window`` / ``drop-caches`` / ``grant-permissions``.
 
 Everything runs against a fake host: no sudo, jetson_clocks, nvpmodel,
-nvfancontrol, visudo or drop_caches is ever executed. The fake records each
+visudo or drop_caches is ever executed. The fake records each
 argv so tests assert exactly what *would* have run.
 """
 
@@ -31,25 +31,34 @@ TEE_ONLY = SYSCTL_ONLY.replace(
 )
 NO_GRANT = "User thor may run the following commands on thor:\n    (ALL : ALL) ALL\n"
 
-CLOCKS_SHOW = (
-    "SOC family:tegra264  Machine:NVIDIA Jetson AGX Thor\n"
-    "GPU MinFreq=306000000 MaxFreq=1300000000 CurrentFreq=612000000\n"
-    "EMC MinFreq=204000000 MaxFreq=3199000000 CurrentFreq=3199000000 FreqOverride=0\n"
-)
+# Verbatim from a real `sudo jetson_clocks --show` on a Thor (2026-10-17).
+CLOCKS_SHOW = """\
+gpu-gpc-0 MinFreq=314000000 MaxFreq=1575000000 CurrentFreq=1575000000
+gpu-nvd-0 MinFreq=314000000 MaxFreq=1692000000 CurrentFreq=1692000000
+EMC MinFreq=665600000 MaxFreq=4266000000 CurrentFreq=665600000 FreqOverride=0
+FAN Dynamic Speed Control=nvfancontrol hwmon1_pwm1=69
+NV Power Mode: MAXN
+"""
+# Verbatim /etc/nvfancontrol.conf line (tab-indented).
+FAN_CONF = "FAN_CONTROL_TYPE ...\n\tFAN_DEFAULT_PROFILE cool\n"
+# gpu-gpc-0 devfreq on a real Thor: cur, min, max (Hz).
+DEVFREQ_STOCK = ("1575000000", "314000000", "1575000000")
 
 
 class FakeHost:
-    def __init__(
-        self, tmp_path, listing=REAL_THOR_LISTING, tools=("jetson_clocks", "nvfancontrol")
-    ):
+    def __init__(self, tmp_path, listing=REAL_THOR_LISTING, tools=("jetson_clocks",)):
         self.calls: list[tuple] = []
         self.listing = listing
         self.tools = set(tools)
-        self.fan = "cool"
+        self.show_ok = True
         self.fail: dict[str, tuple] = {}  # substring of argv -> result
         self.sudoers_written: list[str] = []
         self.answers: list[str] = ["y"]
         (tmp_path / "state").mkdir()
+        self.devfreq = tmp_path / "devfreq"
+        self.set_devfreq(*DEVFREQ_STOCK)
+        self.fan_conf = tmp_path / "nvfancontrol.conf"
+        self.fan_conf.write_text(FAN_CONF)
         self.env = Env(
             exec=self.exec,
             which=lambda n: f"/usr/bin/{n}" if n in self.tools else None,
@@ -61,7 +70,15 @@ class FakeHost:
             mkstemp_dir=str(tmp_path),
             thermal_root=str(tmp_path / "nothermal"),
             hwmon_root=str(tmp_path / "nohwmon"),
+            devfreq_root=str(self.devfreq),
+            fan_conf=str(self.fan_conf),
         )
+
+    def set_devfreq(self, cur, lo, hi):
+        d = self.devfreq / "gpu-gpc-0"
+        d.mkdir(parents=True, exist_ok=True)
+        for name, val in (("cur", cur), ("min", lo), ("max", hi)):
+            (d / f"{name}_freq").write_text(val + "\n")
 
     def _ask(self, prompt):
         if not self.answers:
@@ -86,14 +103,17 @@ class FakeHost:
             return 0, "NV Power Mode: MAXN\n0\n", ""
         if argv[0] == "jetson_clocks" and argv[1:] == ["--show"]:
             return 1, "", "run as root"  # unprivileged show fails on a real Thor
-        if "nvfancontrol" in joined and "-q" in argv:
-            return 0, f"FAN1: Profile: {self.fan}\n", ""
-        if "nvfancontrol" in joined and "-p" in argv:
-            self.fan = argv[-1]
-            return 0, "", ""
+        if argv[:1] == ["/usr/bin/jetson_clocks"] and argv[1:] == ["--show"]:  # as root
+            return 0, CLOCKS_SHOW, ""
         if argv[:2] == ["sudo", "-n"] and "jetson_clocks" in joined:
+            if "--show" in argv:
+                return (0, CLOCKS_SHOW, "") if self.show_ok else (1, "", "a password is required")
             if "--store" in argv:
                 open(argv[-1], "w").write("stock-clocks")
+            elif "--restore" in argv:
+                self.set_devfreq(*DEVFREQ_STOCK)
+            elif argv[-1].endswith("jetson_clocks"):  # bare lock: min pinned to max
+                self.set_devfreq("1575000000", "1575000000", "1575000000")
             return 0, "", ""
         return 0, "", ""
 
@@ -131,24 +151,63 @@ def test_show_idle(host, capsys):
     assert rc == 0 and obj["ok"] is True and obj["reason"] is None
     assert obj["active"] is False and obj["stored"] is False and obj["supported"] is True
     assert obj["power_mode"] == "MAXN"
-    assert obj["fan_profile"] == "cool"
-    assert obj["clocks"]["gpu_mhz"] is None  # unprivileged jetson_clocks --show refused
+    assert obj["fan_profile"] == "cool"  # FAN_DEFAULT_PROFILE from the conf
+    assert obj["clocks"] == {
+        "gpu_mhz": 1575,
+        "gpu_min_mhz": 314,
+        "gpu_max_mhz": 1575,
+        "emc_mhz": 665,
+    }
+    assert obj["clocks_locked"] is False  # min 314 != max 1575
+    assert obj["detail"]["fan_max"] is False  # pwm 69
     assert not host.ran("--store") and not host.ran("--restore")
 
 
-def test_show_parses_clocks_when_readable(host, capsys, monkeypatch):
-    orig = host.exec
-    host.exec = lambda argv, stdin=None: (
-        (0, CLOCKS_SHOW, "") if list(argv) == ["jetson_clocks", "--show"] else orig(argv, stdin)
-    )
-    host.env.exec = host.exec
+def test_show_clocks_come_from_sysfs_without_root(host, capsys):
+    host.show_ok = False  # sudo -n would prompt: only emc is lost
     _, obj = js(capsys, "window", "show")
-    assert obj["clocks"] == {
-        "gpu_mhz": 612,
-        "gpu_min_mhz": 306,
-        "gpu_max_mhz": 1300,
-        "emc_mhz": 3199,
-    }
+    assert obj["clocks"]["gpu_mhz"] == 1575 and obj["clocks"]["gpu_min_mhz"] == 314
+    assert obj["clocks"]["emc_mhz"] is None
+    assert obj["detail"]["fan_max"] is None
+
+
+def test_show_emc_as_root_runs_show_without_sudo(host, capsys):
+    host.env.euid = lambda: 0
+    _, obj = js(capsys, "window", "show")
+    assert obj["clocks"]["emc_mhz"] == 665
+    assert ["/usr/bin/jetson_clocks", "--show"] in [c for c, _ in host.calls]
+
+
+def test_clocks_locked_true_when_min_equals_max(host, capsys):
+    host.set_devfreq("1575000000", "1575000000", "1575000000")
+    _, obj = js(capsys, "window", "show")
+    assert obj["clocks_locked"] is True
+
+
+def test_clocks_locked_null_when_unreadable(host, capsys):
+    (host.devfreq / "gpu-gpc-0" / "min_freq").unlink()
+    _, obj = js(capsys, "window", "show")
+    assert obj["clocks_locked"] is None
+    assert obj["clocks"]["gpu_min_mhz"] is None and obj["clocks"]["gpu_mhz"] == 1575
+
+
+def test_clocks_all_null_without_devfreq(host, capsys):
+    host.env.devfreq_root = str(host.devfreq / "missing")
+    _, obj = js(capsys, "window", "show")
+    assert obj["clocks_locked"] is None
+    assert obj["clocks"]["gpu_mhz"] is None and obj["clocks"]["gpu_max_mhz"] is None
+
+
+def test_fan_profile_null_when_conf_unreadable(host, capsys):
+    host.fan_conf.unlink()
+    _, obj = js(capsys, "window", "show")
+    assert obj["fan_profile"] is None
+
+
+def test_fan_profile_null_when_conf_has_no_default(host, capsys):
+    host.fan_conf.write_text("FAN_PROFILE quiet {\n}\n")
+    _, obj = js(capsys, "window", "show")
+    assert obj["fan_profile"] is None
 
 
 def test_window_bare_noun_is_show(host, capsys):
@@ -169,13 +228,21 @@ def test_full_cycle_store_lock_restore(host, capsys):
 
     rc, obj = js(capsys, "window", "lock")
     assert rc == 0 and obj["action"] == "lock" and obj["active"] is True
-    assert host.fan == "max"
-    assert ["sudo", "-n", "/usr/bin/jetson_clocks"] in [c for c, _ in host.calls]
+    assert obj["clocks_locked"] is True
+    argvs = [c for c, _ in host.calls]
+    assert argvs.index(["sudo", "-n", "/usr/bin/jetson_clocks"]) < argvs.index(
+        ["sudo", "-n", "/usr/bin/jetson_clocks", "--fan"]
+    )
+    assert not host.ran("nvfancontrol") and "fan_error" not in obj["detail"]
 
     rc, obj = js(capsys, "window", "restore")
     assert rc == 0 and obj["restored"] is True and obj["active"] is False and obj["stored"] is False
-    assert host.fan == "cool"  # stored profile restored
-    assert len(host.ran("--restore")) == 1
+    assert obj["clocks_locked"] is False  # stock min/max back
+    restores = host.ran("--restore")
+    assert len(restores) == 1
+    assert restores[0][:4] == ["sudo", "-n", "/usr/bin/jetson_clocks", "--restore"]
+    assert restores[0][-1].endswith("jetson_clocks.state")
+    assert not host.ran("nvfancontrol")  # the restore file carries the fan state
     assert not list(host.env.state_dir.iterdir())
 
 
@@ -206,7 +273,9 @@ def test_lock_is_idempotent(host, capsys):
     host.calls.clear()
     rc, obj = js(capsys, "window", "lock")
     assert rc == 0 and obj["active"] is True
-    assert not host.ran_prefix("sudo", "-n", "/usr/bin/jetson_clocks")
+    assert not [
+        c for c in host.ran_prefix("sudo", "-n", "/usr/bin/jetson_clocks") if "--show" not in c
+    ]
 
 
 def test_restore_without_state_is_ok(host, capsys):
@@ -234,7 +303,7 @@ def test_tool_missing(tmp_path, monkeypatch, capsys):
     rc, obj = js(capsys, "window", "store")
     assert rc == 2 and obj["reason"] == "tool_missing"
     _, show = js(capsys, "window", "show")
-    assert show["supported"] is False and show["fan_profile"] is None
+    assert show["supported"] is False and show["clocks"]["emc_mhz"] is None
 
 
 def test_restore_failure_keeps_state(host, capsys):
@@ -248,10 +317,10 @@ def test_restore_failure_keeps_state(host, capsys):
 
 def test_fan_failure_does_not_fail_the_window(host, capsys):
     js(capsys, "window", "store")
-    host.fail["nvfancontrol -p"] = (1, "", "no such profile")
+    host.fail["--fan"] = (1, "", "jetson_clocks: fan boom")
     rc, obj = js(capsys, "window", "lock")
     assert rc == 0 and obj["active"] is True
-    assert "fan_error" in obj["detail"]
+    assert "boom" in obj["detail"]["fan_error"]
 
 
 def test_root_runs_without_sudo(tmp_path, monkeypatch, capsys):
@@ -362,7 +431,8 @@ def test_install_window_only_when_sysctl_present(tmp_path, monkeypatch, capsys):
     assert "vm.drop_caches" not in rules  # not duplicated
     assert "NOPASSWD: ALL" not in rules  # never full sudo
     assert "thor ALL=(ALL) NOPASSWD: /usr/bin/jetson_clocks --store" in rules
-    assert "--restore" in rules and "nvfancontrol -q" in rules
+    assert "--restore" in rules and "/usr/bin/jetson_clocks --fan" in rules
+    assert "nvfancontrol" not in rules
     assert rules.count("\n") == len(obj["rules"])  # one rule per command
     visudo = h.ran_prefix("visudo")[0]
     assert visudo[:2] == ["visudo", "-cf"]
@@ -423,3 +493,18 @@ def test_temp_rule_file_is_removed(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(window_cmd, "_env", lambda: h.env)
     js(capsys, "grant-permissions", "--yes")
     assert not list(tmp_path.glob("thor-sudoers-*"))
+
+
+def test_window_sudoers_rule_list(host):
+    from jetson_thor.window import core, sudoers
+
+    cmds = sudoers.window_commands(host.env, core.state_paths(host.env))
+    state = str(host.env.state_dir / "jetson_clocks.state")
+    assert cmds == [
+        "/usr/bin/jetson_clocks",
+        f"/usr/bin/jetson_clocks --store {state}",
+        f"/usr/bin/jetson_clocks --restore {state}",
+        "/usr/bin/jetson_clocks --fan",
+        "/usr/bin/jetson_clocks --show",
+    ]
+    assert not any("nvfancontrol" in c for c in cmds)

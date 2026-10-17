@@ -6,13 +6,13 @@ State (stock clocks + saved fan profile) lives under
 ``${XDG_STATE_HOME:-~/.local/state}/thor/``:
 
 * ``jetson_clocks.state`` - written by ``jetson_clocks --store``;
-* ``window.json`` - ``{fan_profile, locked, stored_at}``.
+* ``window.json`` - ``{locked, stored_at}``.
 
-UNVALIDATED (#108): the fan set command (``nvfancontrol -p <profile>``) is a
-declared argv, not one proven on a Thor; a fan failure is reported under
-``detail.fan_error`` and never fails the clock window. The ``max`` profile
-comes from mjolnir ``scripts/hw/setup-thor.sh`` (which injects it into
-``/etc/nvfancontrol.conf`` with a ``.bck`` rollback). Cited, not imported.
+Fan handling (validated on a real Thor, 2026-10-17): ``nvfancontrol`` has no
+runtime profile switch. ``lock`` is ``jetson_clocks`` then ``jetson_clocks
+--fan`` (PWM to max); ``restore`` is ``jetson_clocks --restore <file>``, whose
+stored file carries the fan PWM state. ``fan_profile`` is read from
+``FAN_DEFAULT_PROFILE`` in ``/etc/nvfancontrol.conf``.
 """
 
 from __future__ import annotations
@@ -27,12 +27,10 @@ from jetson_thor.probe import power, thermal
 from jetson_thor.window import sudoers
 from jetson_thor.window.env import Env
 
-FAN_MAX_PROFILE = "max"
-_FAN_PROFILE_RE = re.compile(r"profile\W+(\w+)", re.IGNORECASE)
-_CLOCK_RE = re.compile(
-    r"^(?P<name>\w+)\s+MinFreq=(?P<min>\d+)\s+MaxFreq=(?P<max>\d+)\s+CurrentFreq=(?P<cur>\d+)",
-    re.MULTILINE,
-)
+_FAN_CONF_RE = re.compile(r"^\s*FAN_DEFAULT_PROFILE\s+(\S+)", re.MULTILINE)
+_EMC_RE = re.compile(r"^EMC\s+.*?CurrentFreq=(?P<cur>\d+)", re.MULTILINE)
+_PWM_RE = re.compile(r"hwmon\d+_pwm1=(?P<pwm>\d+)")
+GPU_DEVFREQ = "gpu-gpc-0"
 
 
 def state_paths(env: Env) -> tuple:
@@ -76,38 +74,62 @@ def _priv(env: Env, argv: list, stdin: Optional[str] = None):
     return res, None
 
 
-def _clocks_from(raw: Optional[str]) -> dict:
-    out = {"gpu_mhz": None, "gpu_min_mhz": None, "gpu_max_mhz": None, "emc_mhz": None}
-    for m in _CLOCK_RE.finditer(raw or ""):
-        name = m["name"].upper()
-        if name == "GPU":
-            out.update(
-                gpu_mhz=int(m["cur"]) // 10**6,
-                gpu_min_mhz=int(m["min"]) // 10**6,
-                gpu_max_mhz=int(m["max"]) // 10**6,
-            )
-        elif name == "EMC":
-            out["emc_mhz"] = int(m["cur"]) // 10**6
-    return out
+def _read_int(path: Path) -> Optional[int]:
+    try:
+        return int(path.read_text().strip())
+    except (OSError, ValueError):
+        return None
+
+
+def _mhz(hz: Optional[int]) -> Optional[int]:
+    return None if hz is None else hz // 10**6
+
+
+def _gpu_freqs(env: Env) -> dict:
+    """GPU cur/min/max in Hz from world-readable devfreq sysfs (no root)."""
+    base = Path(env.devfreq_root) / GPU_DEVFREQ
+    return {k: _read_int(base / f"{k}_freq") for k in ("cur", "min", "max")}
+
+
+def _clocks_locked(gpu: dict) -> Optional[bool]:
+    lo, hi = gpu["min"], gpu["max"]
+    return None if lo is None or hi is None else lo == hi
+
+
+def _privileged_show(env: Env) -> Optional[str]:
+    """``jetson_clocks --show`` as root or via non-interactive sudo, else None."""
+    clocks = env.which("jetson_clocks")
+    if not clocks:
+        return None
+    res = env.exec(_sudo(env, [clocks, "--show"]), None)
+    return res[1] if res is not None and res[0] == 0 else None
+
+
+def _emc_mhz(raw: Optional[str]) -> Optional[int]:
+    m = _EMC_RE.search(raw or "")
+    return int(m["cur"]) // 10**6 if m else None
+
+
+def _fan_max(raw: Optional[str]) -> Optional[bool]:
+    m = _PWM_RE.search(raw or "")
+    return int(m["pwm"]) >= 255 if m else None
 
 
 def _fan_profile(env: Env) -> Optional[str]:
-    fan = env.which("nvfancontrol")
-    if not fan:
+    try:
+        text = Path(env.fan_conf).read_text()
+    except OSError:
         return None
-    res = env.exec(_sudo(env, [fan, "-q"]), None)
-    if res is None or res[0] != 0:
-        return None
-    m = _FAN_PROFILE_RE.search(res[1])
+    m = _FAN_CONF_RE.search(text)
     return m.group(1) if m else None
 
 
-def _fan_set(env: Env, profile: str) -> Optional[str]:
-    """Set the fan profile; return an error string, or None on success."""
-    fan = env.which("nvfancontrol")
-    if not fan:
-        return "nvfancontrol not found"
-    res, fail = _priv(env, [fan, "-p", profile])
+def _fan_max_on(env: Env) -> Optional[str]:
+    """``jetson_clocks --fan``; return an error string, or None on success."""
+    clocks = env.which("jetson_clocks")
+    if not clocks:
+        return "jetson_clocks not found"
+    _, fail = _priv(env, [clocks, "--fan"])
     return fail["message"] if fail else None
 
 
@@ -129,6 +151,8 @@ def show(env: Env, runner=None) -> dict:
         if s.get("kind") == "zone":
             temps[s["name"]] = s["temp_c"]
     st = _read_state(env)
+    gpu = _gpu_freqs(env)
+    raw = _privileged_show(env)
     return {
         "ok": True,
         "reason": None,
@@ -136,10 +160,16 @@ def show(env: Env, runner=None) -> dict:
         "stored": st is not None,
         "supported": env.which("jetson_clocks") is not None,
         "power_mode": (data.get("nvpmodel") or {}).get("mode"),
-        "clocks": _clocks_from((data.get("jetson_clocks") or {}).get("raw")),
-        "fan_profile": (st or {}).get("fan_profile") if st else _fan_profile(env),
+        "clocks": {
+            "gpu_mhz": _mhz(gpu["cur"]),
+            "gpu_min_mhz": _mhz(gpu["min"]),
+            "gpu_max_mhz": _mhz(gpu["max"]),
+            "emc_mhz": _emc_mhz(raw),
+        },
+        "clocks_locked": _clocks_locked(gpu),
+        "fan_profile": _fan_profile(env),
         "temps_c": temps,
-        "detail": {},
+        "detail": {"fan_max": _fan_max(raw)},
     }
 
 
@@ -170,7 +200,7 @@ def store(env: Env) -> dict:
         return {**fail, "action": "store"}
     _write_state(
         env,
-        {"fan_profile": _fan_profile(env), "locked": False, "stored_at": int(time.time())},
+        {"locked": False, "stored_at": int(time.time())},
     )
     return _after(env, "store")
 
@@ -189,7 +219,7 @@ def lock(env: Env) -> dict:
         return {**fail, "action": "lock"}
     st["locked"] = True
     _write_state(env, st)
-    fan_err = _fan_set(env, FAN_MAX_PROFILE)
+    fan_err = _fan_max_on(env)
     out = _after(env, "lock")
     if fan_err:
         out["detail"]["fan_error"] = fan_err
@@ -207,18 +237,12 @@ def restore(env: Env) -> dict:
     _, fail = _priv(env, [env.which("jetson_clocks"), "--restore", str(path)])
     if fail:
         return {**fail, "action": "restore"}
-    fan_err = None
-    if st.get("locked") and st.get("fan_profile"):
-        fan_err = _fan_set(env, st["fan_profile"])
     for f in (_window_file(env), path):
         try:
             f.unlink()
         except OSError:
             pass
-    out = _after(env, "restore", restored=True)
-    if fan_err:
-        out["detail"]["fan_error"] = fan_err
-    return out
+    return _after(env, "restore", restored=True)
 
 
 def drop_caches(env: Env) -> dict:
