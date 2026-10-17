@@ -432,7 +432,7 @@ Benchmark window for the Jetson Thor: `store` saves the stock clock state
 (`jetson_clocks --store`; the file includes the fan PWM state), `lock` pins clocks and
 the fan to max (`jetson_clocks`, `jetson_clocks --fan`), `restore` returns to the stored
 state and deletes it, `show` reports state (no root; `emc_mhz` needs root or sudo -n).
-State lives in `${XDG_STATE_HOME:-~/.local/state}/thor/`.
+State lives in `~/.local/state/thor/`.
 
     thor window show --json
     thor window store --json

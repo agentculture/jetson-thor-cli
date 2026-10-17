@@ -3,7 +3,7 @@ the machine-CLI contract: ``ok``, ``reason``, plus verb fields. Exit codes are
 carried in the ``_exit`` key, which the CLI layer strips before printing.
 
 State (stock clocks + saved fan profile) lives under
-``${XDG_STATE_HOME:-~/.local/state}/thor/``:
+``~/.local/state/thor/``:
 
 * ``jetson_clocks.state`` - written by ``jetson_clocks --store``;
 * ``window.json`` - ``{locked, stored_at}``.

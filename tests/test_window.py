@@ -8,6 +8,8 @@ argv so tests assert exactly what *would* have run.
 from __future__ import annotations
 
 import json
+import os
+from pathlib import Path
 
 import pytest
 
@@ -572,20 +574,21 @@ def test_window_sudoers_rule_list(host):
 # ---- state-dir sanitising -----------------------------------------------------
 
 
-def test_state_dir_rejects_relative_and_dotdot_xdg(monkeypatch):
+def test_xdg_state_home_is_ignored_by_window_state(monkeypatch, tmp_path):
     from jetson_thor.window import env as wenv
 
-    fallback = wenv._fallback_state_dir()
-    for bad in ("relative/dir", "/tmp/../etc", "../x"):
-        monkeypatch.setenv("XDG_STATE_HOME", bad)
-        assert wenv.default_state_dir() == fallback
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    expected = Path(os.path.realpath(tmp_path / "home" / ".local" / "state" / "thor"))
+    for xdg in ("relative/dir", "/tmp/../etc", str(tmp_path / "xdg")):
+        monkeypatch.setenv("XDG_STATE_HOME", xdg)
+        assert wenv.default_state_dir() == expected
 
 
-def test_state_dir_accepts_absolute_xdg(monkeypatch, tmp_path):
+def test_state_lives_under_home_local_state(monkeypatch, tmp_path):
     from jetson_thor.window import env as wenv
 
-    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
-    assert wenv.default_state_dir() == tmp_path.resolve() / "thor"
+    monkeypatch.setenv("HOME", str(tmp_path))
+    assert wenv.default_state_dir() == tmp_path.resolve() / ".local" / "state" / "thor"
 
 
 def test_state_file_rejects_separator_in_name(host):
